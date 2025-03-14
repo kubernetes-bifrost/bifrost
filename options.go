@@ -32,14 +32,16 @@ import (
 
 // Options contains the configuration options for getting a token.
 type Options struct {
-	Options           []ProviderOption
+	Audience          string
 	HTTPClient        *http.Client
 	ContainerRegistry string
+	ProviderOptions   []ProviderOption
+	Defaults          *Options
 
-	provider       Provider
-	cache          Cache
-	serviceAccount *client.ObjectKey
-	client         client.Client
+	provider          Provider
+	cache             Cache
+	client            client.Client
+	serviceAccountRef *client.ObjectKey
 }
 
 // Option is a functional option for getting a token.
@@ -68,15 +70,15 @@ func WithCache(cache Cache) Option {
 // the ServiceAccount and creating a token for it.
 func WithServiceAccount(sa client.ObjectKey, client client.Client) Option {
 	return func(o *Options) {
-		o.serviceAccount = &sa
+		o.serviceAccountRef = &sa
 		o.client = client
 	}
 }
 
-// WithProviderOptions sets the provider-specific options for getting a token.
-func WithProviderOptions(opts ...ProviderOption) Option {
+// WithAudience sets the audience for getting the Kubernetes ServiceAccount token.
+func WithAudience(audience string) Option {
 	return func(o *Options) {
-		o.Options = opts
+		o.Audience = audience
 	}
 }
 
@@ -110,8 +112,25 @@ func WithContainerRegistry(registry string) Option {
 	}
 }
 
+// WithProviderOptions sets the provider-specific options for getting a token.
+func WithProviderOptions(opts ...ProviderOption) Option {
+	return func(o *Options) {
+		o.ProviderOptions = opts
+	}
+}
+
+// WithDefaults sets the default options for getting a token.
+func WithDefaults(opts ...Option) Option {
+	return func(o *Options) {
+		var defaults Options
+		defaults.Apply(opts...)
+		o.Defaults = &defaults
+	}
+}
+
 // Apply applies the given slice of Option(s) to the Options struct.
 func (o *Options) Apply(opts ...Option) {
+	o.Defaults = &Options{}
 	for _, opt := range opts {
 		opt(o)
 	}
@@ -120,7 +139,7 @@ func (o *Options) Apply(opts ...Option) {
 // ApplyProviderOptions applies the provider-specific options to the given
 // provider-specific options struct.
 func (o *Options) ApplyProviderOptions(opts any) {
-	for _, opt := range o.Options {
+	for _, opt := range o.ProviderOptions {
 		opt(opts)
 	}
 }
