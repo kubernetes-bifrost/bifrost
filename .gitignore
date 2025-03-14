@@ -1,0 +1,7 @@
+.terraform*
+terraform.*
+*.json
+*.txt
+*.logs
+*.tgz
+config.cue
