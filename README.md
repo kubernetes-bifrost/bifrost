@@ -1,5 +1,7 @@
 # Bifröst
 
+<img src="./docs/img/logo.jpg" alt="Bifröst" width="300" height="300" />
+
 Bifröst helps you federate your ServiceAccounts to get Secret-less
 access to resources from cloud providers by leveraging the Kubernetes
 built-in OpenID Connect (OIDC) functionality.
