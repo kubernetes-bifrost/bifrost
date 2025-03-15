@@ -33,5 +33,5 @@ type Cache interface {
 	GetOrSet(ctx context.Context,
 		key string,
 		newToken func(context.Context) (Token, error),
-	) (Token, bool, error)
+	) (Token, error)
 }

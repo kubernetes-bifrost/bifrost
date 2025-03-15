@@ -25,7 +25,7 @@ package bifröst
 import "time"
 
 // Token represents a temporary access token for a cloud provider's resources.
-type Token = interface {
+type Token interface {
 	// GetDuration returns the duration for which the token is valid.
 	GetDuration() time.Duration
 }

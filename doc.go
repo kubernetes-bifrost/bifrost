@@ -20,6 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// bifröst allows applications to easily obtain access tokens for accessing
-// resources in cloud providers without needing to provide secret credentials.
+// bifröst helps applications running in Kubernetes to easily authenticate
+// with cloud providers for accessing resources. No secret credentials are
+// required.
 package bifröst

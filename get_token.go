@@ -129,8 +129,7 @@ func GetToken(ctx context.Context, opts ...Option) (Token, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to build cache key: %w", err)
 	}
-	token, _, err := o.cache.GetOrSet(ctx, cacheKey, newToken)
-	return token, err
+	return o.cache.GetOrSet(ctx, cacheKey, newToken)
 }
 
 func getAudience(ctx context.Context, provider Provider,
@@ -190,7 +189,7 @@ func getProxyURL(ctx context.Context, serviceAccount *corev1.ServiceAccount, o *
 	}
 	proxyURL, err := url.Parse(address)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse proxy secret field '%s': %w", ProxySecretKeyAddress, err)
+		return nil, fmt.Errorf("invalid proxy secret: failed to parse address: %w", err)
 	}
 
 	// Parse proxy username and password.
@@ -201,6 +200,9 @@ func getProxyURL(ctx context.Context, serviceAccount *corev1.ServiceAccount, o *
 				ProxySecretKeyPassword, ProxySecretKeyUsername)
 		}
 		proxyURL.User = url.UserPassword(username, password)
+	} else if password := string(secret.Data[ProxySecretKeyPassword]); password != "" {
+		return nil, fmt.Errorf("invalid proxy secret: field '%s' is required when '%s' is set",
+			ProxySecretKeyUsername, ProxySecretKeyPassword)
 	}
 
 	return proxyURL, nil
