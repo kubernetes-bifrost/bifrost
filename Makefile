@@ -25,9 +25,13 @@ SHELL := /bin/bash
 TEST_IMAGE := ghcr.io/kubernetes-bifrost/bifrost/test
 
 .PHONY: dev
-dev: tidy
+dev: tidy test-unit
 
 .PHONY: tidy
 tidy:
 	./hack/license.sh
 	git status
+
+.PHONY: test-unit
+test-unit:
+	go test -v .
