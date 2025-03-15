@@ -23,18 +23,30 @@
 package bifröst
 
 const (
+	// APIGroup is the API group for the bifrost-k8s.io API.
 	APIGroup = "bifrost-k8s.io"
-
+	// APIGroupServiceAccount is the API group for service account related annotations.
 	APIGroupServiceAccount = "serviceaccounts." + APIGroup
-	APIGroupNode           = "nodes." + APIGroup
+	// APIGroupNode is the API group for node related annotations.
+	APIGroupNode = "nodes." + APIGroup
 
-	ServiceAccountAudience        = APIGroupServiceAccount + "/audience"
+	// ServiceAccountAudience is the annotation key for the audience of the service account token.
+	ServiceAccountAudience = APIGroupServiceAccount + "/audience"
+	// ServiceAccountTokenSecretName is the annotation key for the name of the secret
+	// containing a proxy address, username and password for using when issuing access tokens.
 	ServiceAccountProxySecretName = APIGroupServiceAccount + "/proxySecretName"
 
-	ProxySecretKeyAddress  = "address"
+	// ProxySecretKeyAddress is the key containing the proxy address in the secret.
+	ProxySecretKeyAddress = "address"
+	// ProxySecretKeyUsername is the key containing the proxy username in the secret.
 	ProxySecretKeyUsername = "username"
+	// ProxySecretKeyPassword is the key containing the proxy password in the secret.
 	ProxySecretKeyPassword = "password"
 
-	NodeServiceAccountName      = APIGroupNode + "/serviceAccountName"
+	// NodeServiceAccountName is the annotation key for the name of the service account
+	// to use when issuing access tokens for pods running on the host network in the node.
+	NodeServiceAccountName = APIGroupNode + "/serviceAccountName"
+	// NodeServiceAccountNamespace is the annotation key for the namespace of the service account
+	// to use when issuing access tokens for pods running on the host network in the node.
 	NodeServiceAccountNamespace = APIGroupNode + "/serviceAccountNamespace"
 )
