@@ -3,6 +3,7 @@ module github.com/kubernetes-bifrost/bifrost
 go 1.24.1
 
 require (
+	github.com/onsi/gomega v1.36.2
 	k8s.io/api v0.32.1
 	sigs.k8s.io/controller-runtime v0.20.3
 )
@@ -28,8 +29,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/onsi/ginkgo/v2 v2.22.1 // indirect
-	github.com/onsi/gomega v1.36.2 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/net v0.34.0 // indirect
