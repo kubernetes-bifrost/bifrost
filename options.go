@@ -40,7 +40,7 @@ type Options struct {
 
 	provider          Provider
 	cache             Cache
-	client            client.Client
+	client            Client
 	serviceAccountRef *client.ObjectKey
 }
 
@@ -68,7 +68,7 @@ func WithCache(cache Cache) Option {
 // WithServiceAccount sets the Kubernetes ServiceAccount reference to use
 // for getting a token and the controller-runtime client to use for fetching
 // the ServiceAccount and creating a token for it.
-func WithServiceAccount(sa client.ObjectKey, client client.Client) Option {
+func WithServiceAccount(sa client.ObjectKey, client Client) Option {
 	return func(o *Options) {
 		o.serviceAccountRef = &sa
 		o.client = client
