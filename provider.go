@@ -35,7 +35,7 @@ type Provider interface {
 	GetName() string
 
 	// BuildCacheKey returns a key that can be used to cache the token.
-	// The ServiceAccount is optional.
+	// The service account is optional.
 	BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...Option) (string, error)
 
 	// NewDefaultToken returns a token that can be used to authenticate with the
@@ -45,10 +45,10 @@ type Provider interface {
 	NewDefaultToken(ctx context.Context, opts ...Option) (Token, error)
 
 	// GetDefaultAudience returns the audience the OIDC tokens issued representing
-	// ServiceAccounts should have. The audience is retrieved from the environment.
+	// service accounts should have. The audience is retrieved from the environment.
 	GetDefaultAudience(ctx context.Context) (string, error)
 
-	// NewToken takes a ServiceAccount and its OIDC token and returns a token
+	// NewToken takes a service account and its OIDC token and returns a token
 	// that can be used to authenticate with the cloud provider.
 	NewTokenForServiceAccount(ctx context.Context, oidcToken string,
 		serviceAccount *corev1.ServiceAccount, opts ...Option) (Token, error)

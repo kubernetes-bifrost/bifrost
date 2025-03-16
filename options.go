@@ -57,9 +57,9 @@ func WithCache(cache Cache) Option {
 	}
 }
 
-// WithServiceAccount sets the Kubernetes ServiceAccount reference to use
+// WithServiceAccount sets the Kubernetes service account reference to use
 // for getting a token and the controller-runtime client to use for fetching
-// the ServiceAccount and creating a token for it.
+// the service account, creating a token for it and looking up related secrets.
 func WithServiceAccount(sa client.ObjectKey, client Client) Option {
 	return func(o *Options) {
 		o.serviceAccountRef = &sa
@@ -67,7 +67,7 @@ func WithServiceAccount(sa client.ObjectKey, client Client) Option {
 	}
 }
 
-// WithAudience sets the audience for getting the Kubernetes ServiceAccount token.
+// WithAudience sets the audience for getting the Kubernetes service account token.
 func WithAudience(audience string) Option {
 	return func(o *Options) {
 		o.Audience = audience
