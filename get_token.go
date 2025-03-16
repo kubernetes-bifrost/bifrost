@@ -59,10 +59,13 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 			return nil, fmt.Errorf("failed to get service account: %w", err)
 		}
 
-		var err error
-		audience, err = getAudience(ctx, provider, serviceAccount, &o)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get audience for service account token: %w", err)
+		audience = o.GetAudience(serviceAccount)
+		if audience == "" {
+			var err error
+			audience, err = provider.GetDefaultAudience(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get default provider audience for creating service account token: %w", err)
+			}
 		}
 
 		newAccessToken = func(ctx context.Context) (Token, error) {
@@ -125,14 +128,6 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 		return nil, fmt.Errorf("failed to build cache key: %w", err)
 	}
 	return o.cache.GetOrSet(ctx, cacheKey, newToken)
-}
-
-func getAudience(ctx context.Context, provider Provider,
-	serviceAccount *corev1.ServiceAccount, o *Options) (string, error) {
-	if aud := o.GetAudience(serviceAccount); aud != "" {
-		return aud, nil
-	}
-	return provider.GetDefaultAudience(ctx)
 }
 
 func getProxyURL(ctx context.Context, serviceAccount *corev1.ServiceAccount, o *Options) (*url.URL, error) {

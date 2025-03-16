@@ -390,7 +390,7 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, kubeClient),
 			},
-			expectedError: "failed to get audience for service account token: mock error",
+			expectedError: "failed to get default provider audience for creating service account token: mock error",
 		},
 		{
 			name: "error on creating service account token",
