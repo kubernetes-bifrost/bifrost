@@ -68,5 +68,5 @@ type OIDCProvider interface {
 	// an audience and returns an OIDC token that attests to the identity and
 	// targets the audience.
 	NewOIDCToken(ctx context.Context, token Token,
-		identity Identity, audience string, opts ...Option) (*OIDCToken, error)
+		audience string, identity Identity, opts ...Option) (*OIDCToken, error)
 }

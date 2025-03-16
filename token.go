@@ -35,8 +35,8 @@ type Token interface {
 // time.
 type OIDCToken struct {
 	Token     string
-	Identity  Identity
 	Audience  string
+	Identity  Identity
 	ExpiresAt time.Time
 }
 
