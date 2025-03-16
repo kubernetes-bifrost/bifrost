@@ -590,17 +590,17 @@ func TestGetToken(t *testing.T) {
 			name: "registry token from default",
 			opts: []bifröst.Option{
 				bifröst.WithProvider(&mockProvider{
-					registryToken: &mockToken{value: "registry-default-token"},
+					registryToken: &bifröst.ContainerRegistryToken{Username: "registry-default-token"},
 				}),
 				bifröst.WithContainerRegistry("test-registry"),
 			},
-			expectedToken: &mockToken{value: "registry-default-token"},
+			expectedToken: &bifröst.ContainerRegistryToken{Username: "registry-default-token"},
 		},
 		{
 			name: "registry token from service account",
 			opts: []bifröst.Option{
 				bifröst.WithProvider(&mockProvider{
-					registryToken: &mockToken{value: "registry-token"},
+					registryToken: &bifröst.ContainerRegistryToken{Username: "registry-token"},
 				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "default",
@@ -608,7 +608,7 @@ func TestGetToken(t *testing.T) {
 				}, kubeClient),
 				bifröst.WithContainerRegistry("test-registry"),
 			},
-			expectedToken: &mockToken{value: "registry-token"},
+			expectedToken: &bifröst.ContainerRegistryToken{Username: "registry-token"},
 		},
 		{
 			name: "audience from options has precedence over all other sources",
@@ -758,7 +758,7 @@ type mockProvider struct {
 	tokenAudience        string
 	tokenProxyURL        string
 	tokenOIDCClient      *http.Client
-	registryToken        bifröst.Token
+	registryToken        *bifröst.ContainerRegistryToken
 	registryTokenErr     bool
 }
 
@@ -846,7 +846,7 @@ func (m *mockProvider) NewTokenForServiceAccount(ctx context.Context, oidcToken 
 }
 
 func (m *mockProvider) NewRegistryToken(ctx context.Context, containerRegistry string,
-	token bifröst.Token, opts ...bifröst.Option) (bifröst.Token, error) {
+	token bifröst.Token, opts ...bifröst.Option) (*bifröst.ContainerRegistryToken, error) {
 	return m.registryToken, getError(m.registryTokenErr)
 }
 
