@@ -42,7 +42,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 	o.Apply(opts...)
 
 	// Initialize default token fetcher.
-	newAccessToken := func(ctx context.Context) (Token, error) {
+	newAccessToken := func() (Token, error) {
 		token, err := provider.NewDefaultToken(ctx, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create provider default access token: %w", err)
@@ -68,7 +68,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 			}
 		}
 
-		newAccessToken = func(ctx context.Context) (Token, error) {
+		newAccessToken = func() (Token, error) {
 			tokenReq := &authnv1.TokenRequest{
 				Spec: authnv1.TokenRequestSpec{
 					Audiences: []string{audience},
@@ -91,8 +91,8 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 	// Initialize registry token fetcher if container registry is specified.
 	newToken := newAccessToken
 	if o.ContainerRegistry != "" {
-		newToken = func(ctx context.Context) (Token, error) {
-			accessToken, err := newAccessToken(ctx)
+		newToken = func() (Token, error) {
+			accessToken, err := newAccessToken()
 			if err != nil {
 				return nil, err
 			}
@@ -119,7 +119,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 
 	// Bail out early if cache is disabled.
 	if o.cache == nil {
-		return newToken(ctx)
+		return newToken()
 	}
 
 	// Get token from cache or fetch a new one.
@@ -127,7 +127,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to build cache key: %w", err)
 	}
-	return o.cache.GetOrSet(ctx, cacheKey, newToken)
+	return o.cache.GetOrSet(cacheKey, newToken)
 }
 
 func getProxyURL(ctx context.Context, serviceAccount *corev1.ServiceAccount, o *Options) (*url.URL, error) {

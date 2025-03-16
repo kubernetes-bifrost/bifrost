@@ -755,16 +755,11 @@ func (*mockToken) GetDuration() time.Duration {
 	return 0
 }
 
-func (m *mockCache) GetOrSet(ctx context.Context,
-	key string,
-	newToken func(context.Context) (bifröst.Token, error),
-) (bifröst.Token, error) {
-
-	if m.key != key {
-		return newToken(ctx)
+func (m *mockCache) GetOrSet(key string, newToken func() (bifröst.Token, error)) (bifröst.Token, error) {
+	if m.key == key {
+		return m.token, nil
 	}
-
-	return m.token, nil
+	return newToken()
 }
 
 func (*mockProvider) GetName() string {

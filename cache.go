@@ -22,14 +22,10 @@
 
 package bifröst
 
-import "context"
-
 // Cache is an interface for caching tokens.
 type Cache interface {
 	// GetOrSet gets a token from the cache if present and not expired.
 	// If the token is not present or expired, it calls newToken to get a new
-	// token and stores it in the cache. It returns the token and a boolean
-	// indicating whether the token was fetched from the cache or not.
-	GetOrSet(ctx context.Context, key string,
-		newToken func(context.Context) (Token, error)) (Token, error)
+	// token and stores it in the cache.
+	GetOrSet(key string, newToken func() (Token, error)) (Token, error)
 }
