@@ -496,10 +496,11 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name: "error on cache get or set",
+			provider: mockProvider{
+				defaultTokenErr: true,
+			},
 			opts: []bifröst.Option{
-				bifröst.WithCache(&mockCache{
-					err: true,
-				}),
+				bifröst.WithCache(&mockCache{}),
 			},
 			expectedError: "mock error",
 		},
@@ -507,6 +508,7 @@ func TestGetToken(t *testing.T) {
 			name: "cached default token",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
+					key:   "893e00a7e91f9bf03343e8ab9139fdc9077f5c8f4be6c1bcfc0871ad2d2f365c",
 					token: &mockToken{value: "cached-default-token"},
 				}),
 			},
@@ -516,6 +518,7 @@ func TestGetToken(t *testing.T) {
 			name: "cached service account token",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
+					key:   "452dbce1be84001302394dfeafa87046f49afa5833c027f814447a36003aba54",
 					token: &mockToken{value: "cached-token"},
 				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
@@ -529,6 +532,7 @@ func TestGetToken(t *testing.T) {
 			name: "cached registry token from default",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
+					key:   "893e00a7e91f9bf03343e8ab9139fdc9077f5c8f4be6c1bcfc0871ad2d2f365c",
 					token: &mockToken{value: "cached-registry-default-token"},
 				}),
 				bifröst.WithContainerRegistry("test-registry"),
@@ -539,6 +543,7 @@ func TestGetToken(t *testing.T) {
 			name: "cached registry token from service account",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
+					key:   "452dbce1be84001302394dfeafa87046f49afa5833c027f814447a36003aba54",
 					token: &mockToken{value: "cached-registry-token"},
 				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
@@ -724,8 +729,8 @@ type mockToken struct {
 }
 
 type mockCache struct {
+	key   string
 	token bifröst.Token
-	err   bool
 }
 
 type mockProvider struct {
@@ -753,7 +758,12 @@ func (m *mockCache) GetOrSet(ctx context.Context,
 	key string,
 	newToken func(context.Context) (bifröst.Token, error),
 ) (bifröst.Token, error) {
-	return m.token, getError(m.err)
+
+	if m.key != key {
+		return newToken(ctx)
+	}
+
+	return m.token, nil
 }
 
 func (*mockProvider) GetName() string {
