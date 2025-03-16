@@ -38,7 +38,6 @@ type Options struct {
 	ProviderOptions   []ProviderOption
 	Defaults          *Options
 
-	provider          Provider
 	cache             Cache
 	client            Client
 	serviceAccountRef *client.ObjectKey
@@ -50,13 +49,6 @@ type Option func(*Options)
 // ProviderOption is a functional option for getting a token
 // that is specific to the provider.
 type ProviderOption func(any)
-
-// WithProvider sets the provider for getting a token.
-func WithProvider(provider Provider) Option {
-	return func(o *Options) {
-		o.provider = provider
-	}
-}
 
 // WithCache sets the cache for getting a token.
 func WithCache(cache Cache) Option {

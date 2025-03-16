@@ -36,15 +36,10 @@ import (
 )
 
 // GetToken returns an access token for accessing resources in the configured cloud provider.
-func GetToken(ctx context.Context, opts ...Option) (Token, error) {
+func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, error) {
 
 	var o Options
 	o.Apply(opts...)
-
-	provider := o.provider
-	if provider == nil {
-		return nil, fmt.Errorf("provider must be specified")
-	}
 
 	// Initialize default token fetcher.
 	newAccessToken := func(ctx context.Context) (Token, error) {

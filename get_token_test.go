@@ -356,25 +356,21 @@ func TestGetToken(t *testing.T) {
 
 	for _, tt := range []struct {
 		name          string
+		provider      mockProvider
 		opts          []bifröst.Option
 		expectedToken bifröst.Token
 		expectedError string
 	}{
 		{
-			name:          "no provider",
-			expectedError: "provider must be specified",
-		},
-		{
 			name: "error on creating default token",
-			opts: []bifröst.Option{bifröst.WithProvider(&mockProvider{
+			provider: mockProvider{
 				defaultTokenErr: true,
-			})},
+			},
 			expectedError: "failed to create provider default access token: mock error",
 		},
 		{
 			name: "error on getting service account",
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "default",
 					Namespace: "non-existing",
@@ -384,10 +380,10 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name: "error on getting default audience",
+			provider: mockProvider{
+				defaultAudienceErr: true,
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					defaultAudienceErr: true,
-				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "default",
 					Namespace: "default",
@@ -398,7 +394,6 @@ func TestGetToken(t *testing.T) {
 		{
 			name: "error on creating service account token",
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "default",
 					Namespace: "default",
@@ -408,10 +403,10 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name: "error on creating access token for service account",
+			provider: mockProvider{
+				tokenErr: true,
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					tokenErr: true,
-				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "default",
 					Namespace: "default",
@@ -421,20 +416,20 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name: "error on creating access token with container registry",
+			provider: mockProvider{
+				defaultTokenErr: true,
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					defaultTokenErr: true,
-				}),
 				bifröst.WithContainerRegistry("test-registry"),
 			},
 			expectedError: "failed to create provider default access token: mock error",
 		},
 		{
 			name: "error on creating registry token",
+			provider: mockProvider{
+				registryTokenErr: true,
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					registryTokenErr: true,
-				}),
 				bifröst.WithContainerRegistry("test-registry"),
 			},
 			expectedError: "failed to create provider registry token: mock error",
@@ -442,7 +437,6 @@ func TestGetToken(t *testing.T) {
 		{
 			name: "error on getting proxy secret",
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "invalid-proxy-secret",
 					Namespace: "default",
@@ -453,7 +447,6 @@ func TestGetToken(t *testing.T) {
 		{
 			name: "proxy secret with missing address",
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "missing-proxy-address",
 					Namespace: "default",
@@ -464,7 +457,6 @@ func TestGetToken(t *testing.T) {
 		{
 			name: "proxy secret with invalid address",
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "invalid-proxy-address",
 					Namespace: "default",
@@ -475,7 +467,6 @@ func TestGetToken(t *testing.T) {
 		{
 			name: "proxy secret with missing password",
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "missing-proxy-password",
 					Namespace: "default",
@@ -486,7 +477,6 @@ func TestGetToken(t *testing.T) {
 		{
 			name: "proxy secret with missing username",
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "missing-proxy-username",
 					Namespace: "default",
@@ -496,10 +486,10 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name: "error on building provider cache key",
+			provider: mockProvider{
+				cacheKeyErr: true,
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					cacheKeyErr: true,
-				}),
 				bifröst.WithCache(&mockCache{}),
 			},
 			expectedError: "failed to build cache key: mock error",
@@ -507,7 +497,6 @@ func TestGetToken(t *testing.T) {
 		{
 			name: "error on cache get or set",
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{}),
 				bifröst.WithCache(&mockCache{
 					err: true,
 				}),
@@ -517,7 +506,6 @@ func TestGetToken(t *testing.T) {
 		{
 			name: "cached default token",
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{}),
 				bifröst.WithCache(&mockCache{
 					token: &mockToken{value: "cached-default-token"},
 				}),
@@ -527,7 +515,6 @@ func TestGetToken(t *testing.T) {
 		{
 			name: "cached service account token",
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{}),
 				bifröst.WithCache(&mockCache{
 					token: &mockToken{value: "cached-token"},
 				}),
@@ -541,7 +528,6 @@ func TestGetToken(t *testing.T) {
 		{
 			name: "cached registry token from default",
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{}),
 				bifröst.WithCache(&mockCache{
 					token: &mockToken{value: "cached-registry-default-token"},
 				}),
@@ -552,7 +538,6 @@ func TestGetToken(t *testing.T) {
 		{
 			name: "cached registry token from service account",
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{}),
 				bifröst.WithCache(&mockCache{
 					token: &mockToken{value: "cached-registry-token"},
 				}),
@@ -566,19 +551,17 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name: "default token",
-			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					defaultToken: &mockToken{value: "default-token"},
-				}),
+			provider: mockProvider{
+				defaultToken: &mockToken{value: "default-token"},
 			},
 			expectedToken: &mockToken{value: "default-token"},
 		},
 		{
 			name: "access token",
+			provider: mockProvider{
+				token: &mockToken{value: "access-token"},
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					token: &mockToken{value: "access-token"},
-				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "default",
 					Namespace: "default",
@@ -588,20 +571,20 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name: "registry token from default",
+			provider: mockProvider{
+				registryToken: &bifröst.ContainerRegistryToken{Username: "registry-default-token"},
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					registryToken: &bifröst.ContainerRegistryToken{Username: "registry-default-token"},
-				}),
 				bifröst.WithContainerRegistry("test-registry"),
 			},
 			expectedToken: &bifröst.ContainerRegistryToken{Username: "registry-default-token"},
 		},
 		{
 			name: "registry token from service account",
+			provider: mockProvider{
+				registryToken: &bifröst.ContainerRegistryToken{Username: "registry-token"},
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					registryToken: &bifröst.ContainerRegistryToken{Username: "registry-token"},
-				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "default",
 					Namespace: "default",
@@ -612,13 +595,13 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name: "audience from options has precedence over all other sources",
+			provider: mockProvider{
+				defaultAudience: "provider-audience",
+				tokenAudience:   "option-audience",
+				tokenOIDCClient: oidcClient,
+				token:           &mockToken{value: "option-audience-token"},
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					defaultAudience: "provider-audience",
-					tokenAudience:   "option-audience",
-					tokenOIDCClient: oidcClient,
-					token:           &mockToken{value: "option-audience-token"},
-				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "sa-audience",
 					Namespace: "default",
@@ -630,13 +613,13 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name: "service account audience has priority over defaults",
+			provider: mockProvider{
+				defaultAudience: "provider-audience",
+				tokenAudience:   "sa-audience",
+				tokenOIDCClient: oidcClient,
+				token:           &mockToken{value: "sa-audience-token"},
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					defaultAudience: "provider-audience",
-					tokenAudience:   "sa-audience",
-					tokenOIDCClient: oidcClient,
-					token:           &mockToken{value: "sa-audience-token"},
-				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "sa-audience",
 					Namespace: "default",
@@ -647,13 +630,13 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name: "audience from default options has priority over provider default audience",
+			provider: mockProvider{
+				defaultAudience: "provider-audience",
+				tokenAudience:   "default-audience",
+				tokenOIDCClient: oidcClient,
+				token:           &mockToken{value: "default-audience-token"},
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					defaultAudience: "provider-audience",
-					tokenAudience:   "default-audience",
-					tokenOIDCClient: oidcClient,
-					token:           &mockToken{value: "default-audience-token"},
-				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "default",
 					Namespace: "default",
@@ -664,13 +647,13 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name: "provider default audience",
+			provider: mockProvider{
+				defaultAudience: "provider-audience",
+				tokenAudience:   "provider-audience",
+				tokenOIDCClient: oidcClient,
+				token:           &mockToken{value: "provider-audience-token"},
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					defaultAudience: "provider-audience",
-					tokenAudience:   "provider-audience",
-					tokenOIDCClient: oidcClient,
-					token:           &mockToken{value: "provider-audience-token"},
-				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "default",
 					Namespace: "default",
@@ -680,11 +663,11 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name: "proxy URL from options has priority over all other sources",
+			provider: mockProvider{
+				tokenProxyURL: "http://option-proxy",
+				token:         &mockToken{value: "option-proxy-token"},
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					tokenProxyURL: "http://option-proxy",
-					token:         &mockToken{value: "option-proxy-token"},
-				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "proxy-secret",
 					Namespace: "default",
@@ -696,11 +679,11 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name: "service account proxy URL has priority over default",
+			provider: mockProvider{
+				tokenProxyURL: "http://user:pass@sa-proxy",
+				token:         &mockToken{value: "sa-proxy-token"},
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					tokenProxyURL: "http://user:pass@sa-proxy",
-					token:         &mockToken{value: "sa-proxy-token"},
-				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "proxy-secret",
 					Namespace: "default",
@@ -711,11 +694,11 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name: "proxy URL from default options",
+			provider: mockProvider{
+				defaultTokenProxyURL: "http://default-proxy",
+				defaultToken:         &mockToken{value: "default-proxy-token"},
+			},
 			opts: []bifröst.Option{
-				bifröst.WithProvider(&mockProvider{
-					defaultTokenProxyURL: "http://default-proxy",
-					defaultToken:         &mockToken{value: "default-proxy-token"},
-				}),
 				bifröst.WithDefaults(bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "default-proxy"})),
 			},
 			expectedToken: &mockToken{value: "default-proxy-token"},
@@ -724,7 +707,7 @@ func TestGetToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			token, err := bifröst.GetToken(ctx, tt.opts...)
+			token, err := bifröst.GetToken(ctx, &tt.provider, tt.opts...)
 			if tt.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tt.expectedError))
