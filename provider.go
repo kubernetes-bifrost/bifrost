@@ -59,3 +59,14 @@ type Provider interface {
 	NewRegistryToken(ctx context.Context, containerRegistry string,
 		token Token, opts ...Option) (Token, error)
 }
+
+// OIDCProvider extends Provider with a method for creating OIDC tokens.
+type OIDCProvider interface {
+	Provider
+
+	// NewOIDCToken takes an access token, an identity to be impesonated and
+	// an audience and returns an OIDC token that attests to the identity and
+	// targets the audience.
+	NewOIDCToken(ctx context.Context, token Token,
+		identity Identity, audience string, opts ...Option) (*OIDCToken, error)
+}

@@ -31,6 +31,17 @@ import (
 	bifröst "github.com/kubernetes-bifrost/bifrost"
 )
 
+func TestOIDCToken_GetDuration(t *testing.T) {
+	g := NewWithT(t)
+
+	token := &bifröst.OIDCToken{
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+
+	duration := token.GetDuration()
+	g.Expect(duration).To(BeNumerically("~", time.Hour, time.Second))
+}
+
 func TestContainerRegistryToken_GetDuration(t *testing.T) {
 	g := NewWithT(t)
 

@@ -22,37 +22,10 @@
 
 package bifröst
 
-import "time"
+import "fmt"
 
-// Token represents a temporary access token for a cloud provider's resources.
-type Token interface {
-	// GetDuration returns the duration for which the token is valid.
-	GetDuration() time.Duration
-}
-
-// OIDCToken represents a temporary identity token attesting to a cloud provider
-// identity. It was issued for a specific audience and is valid until a specific
-// time.
-type OIDCToken struct {
-	Token     string
-	Identity  Identity
-	Audience  string
-	ExpiresAt time.Time
-}
-
-// GetDuration returns the duration for which the token is valid.
-func (o *OIDCToken) GetDuration() time.Duration {
-	return time.Until(o.ExpiresAt)
-}
-
-// ContainerRegistryToken represents a temporary access token for a container registry.
-type ContainerRegistryToken struct {
-	Username  string
-	Password  string
-	ExpiresAt time.Time
-}
-
-// GetDuration returns the duration for which the token is valid.
-func (c *ContainerRegistryToken) GetDuration() time.Duration {
-	return time.Until(c.ExpiresAt)
+// Identity represents an identity in a cloud provider. The underlying structure
+// depends on the cloud provider.
+type Identity interface {
+	fmt.Stringer
 }
