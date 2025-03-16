@@ -413,7 +413,7 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, managerClient),
 			},
-			expectedError: "failed to create provider access token for service account: mock error",
+			expectedError: "failed to create provider access token for OIDC token: mock error",
 		},
 		{
 			name: "error on creating access token with container registry",

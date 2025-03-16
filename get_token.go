@@ -68,20 +68,27 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 			}
 		}
 
-		newAccessToken = func() (Token, error) {
+		newOIDCToken := func() (string, error) {
 			tokenReq := &authnv1.TokenRequest{
 				Spec: authnv1.TokenRequestSpec{
 					Audiences: []string{audience},
 				},
 			}
 			if err := o.client.SubResource("token").Create(ctx, serviceAccount, tokenReq); err != nil {
-				return nil, fmt.Errorf("failed to create kubernetes OIDC token for service account: %w", err)
+				return "", fmt.Errorf("failed to create kubernetes OIDC token for service account: %w", err)
+			}
+			return tokenReq.Status.Token, nil
+		}
+
+		newAccessToken = func() (Token, error) {
+			oidcToken, err := newOIDCToken()
+			if err != nil {
+				return nil, err
 			}
 
-			oidcToken := tokenReq.Status.Token
 			token, err := provider.NewTokenForServiceAccount(ctx, oidcToken, serviceAccount, opts...)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create provider access token for service account: %w", err)
+				return nil, fmt.Errorf("failed to create provider access token for OIDC token: %w", err)
 			}
 
 			return token, nil
