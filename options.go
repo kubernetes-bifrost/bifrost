@@ -33,7 +33,6 @@ import (
 
 // Options contains the configuration options for getting a token.
 type Options struct {
-	Audience          string
 	HTTPClient        *http.Client
 	ContainerRegistry string
 	ProviderOptions   []ProviderOption
@@ -42,6 +41,7 @@ type Options struct {
 	cache             Cache
 	client            Client
 	serviceAccountRef *client.ObjectKey
+	audience          string
 }
 
 // Option is a functional option for getting a token.
@@ -71,7 +71,7 @@ func WithServiceAccount(sa client.ObjectKey, client Client) Option {
 // WithAudience sets the audience for getting the Kubernetes service account token.
 func WithAudience(audience string) Option {
 	return func(o *Options) {
-		o.Audience = audience
+		o.audience = audience
 	}
 }
 
@@ -140,7 +140,7 @@ func (o *Options) ApplyProviderOptions(opts any) {
 // GetAudience returns the configured audience taking into account the service account
 // and the default audience.
 func (o *Options) GetAudience(serviceAccount *corev1.ServiceAccount) (aud string) {
-	if aud = o.Audience; aud != "" {
+	if aud = o.audience; aud != "" {
 		return
 	}
 
@@ -150,7 +150,7 @@ func (o *Options) GetAudience(serviceAccount *corev1.ServiceAccount) (aud string
 		}
 	}
 
-	if aud = o.Defaults.Audience; aud != "" {
+	if aud = o.Defaults.audience; aud != "" {
 		return
 	}
 

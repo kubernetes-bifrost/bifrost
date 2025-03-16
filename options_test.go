@@ -121,7 +121,7 @@ func TestWithDefaults(t *testing.T) {
 	var o bifröst.Options
 	bifröst.WithDefaults(bifröst.WithAudience("test"))(&o)
 	g.Expect(o.Defaults).NotTo(BeNil())
-	g.Expect(o.Defaults.Audience).To(Equal("test"))
+	g.Expect(o.Defaults.GetAudience(nil)).To(Equal("test"))
 }
 
 func TestOptions_Apply(t *testing.T) {
@@ -146,7 +146,7 @@ func TestOptions_Apply(t *testing.T) {
 			var o bifröst.Options
 			o.Apply(tt.opts...)
 			g.Expect(o.Defaults).NotTo(BeNil())
-			g.Expect(o.Audience).To(Equal(tt.expectedAudience))
+			g.Expect(o.GetAudience(nil)).To(Equal(tt.expectedAudience))
 		})
 	}
 }
@@ -166,17 +166,15 @@ func TestOptions_ApplyProviderOptions(t *testing.T) {
 func TestOptions_GetAudience(t *testing.T) {
 	for _, tt := range []struct {
 		name             string
-		opts             bifröst.Options
+		opts             []bifröst.Option
 		serviceAccount   *corev1.ServiceAccount
 		expectedAudience string
 	}{
 		{
 			name: "audience from options has precedence over all other sources",
-			opts: bifröst.Options{
-				Audience: "option-audience",
-				Defaults: &bifröst.Options{
-					Audience: "default-audience",
-				},
+			opts: []bifröst.Option{
+				bifröst.WithAudience("option-audience"),
+				bifröst.WithDefaults(bifröst.WithAudience("default-audience")),
 			},
 			serviceAccount: &corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
@@ -189,10 +187,8 @@ func TestOptions_GetAudience(t *testing.T) {
 		},
 		{
 			name: "audience from service account has precedence over default",
-			opts: bifröst.Options{
-				Defaults: &bifröst.Options{
-					Audience: "default-audience",
-				},
+			opts: []bifröst.Option{
+				bifröst.WithDefaults(bifröst.WithAudience("default-audience")),
 			},
 			serviceAccount: &corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
@@ -205,25 +201,23 @@ func TestOptions_GetAudience(t *testing.T) {
 		},
 		{
 			name: "default audience",
-			opts: bifröst.Options{
-				Defaults: &bifröst.Options{
-					Audience: "default-audience",
-				},
+			opts: []bifröst.Option{
+				bifröst.WithDefaults(bifröst.WithAudience("default-audience")),
 			},
 			expectedAudience: "default-audience",
 		},
 		{
-			name: "no audience",
-			opts: bifröst.Options{
-				Defaults: &bifröst.Options{},
-			},
+			name:             "no audience",
 			expectedAudience: "",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			g.Expect(tt.opts.GetAudience(tt.serviceAccount)).To(Equal(tt.expectedAudience))
+			var o bifröst.Options
+			o.Apply(tt.opts...)
+
+			g.Expect(o.GetAudience(tt.serviceAccount)).To(Equal(tt.expectedAudience))
 		})
 	}
 }
