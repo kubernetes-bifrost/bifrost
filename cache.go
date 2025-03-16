@@ -30,8 +30,6 @@ type Cache interface {
 	// If the token is not present or expired, it calls newToken to get a new
 	// token and stores it in the cache. It returns the token and a boolean
 	// indicating whether the token was fetched from the cache or not.
-	GetOrSet(ctx context.Context,
-		key string,
-		newToken func(context.Context) (Token, error),
-	) (Token, error)
+	GetOrSet(ctx context.Context, key string,
+		newToken func(context.Context) (Token, error)) (Token, error)
 }
