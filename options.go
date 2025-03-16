@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -134,4 +135,24 @@ func (o *Options) ApplyProviderOptions(opts any) {
 	for _, opt := range o.ProviderOptions {
 		opt(opts)
 	}
+}
+
+// GetAudience returns the configured audience taking into account the service account
+// and the default audience.
+func (o *Options) GetAudience(serviceAccount *corev1.ServiceAccount) (aud string) {
+	if aud = o.Audience; aud != "" {
+		return
+	}
+
+	if serviceAccount != nil {
+		if aud = serviceAccount.Annotations[ServiceAccountAudience]; aud != "" {
+			return
+		}
+	}
+
+	if aud = o.Defaults.Audience; aud != "" {
+		return
+	}
+
+	return
 }

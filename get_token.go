@@ -128,22 +128,10 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 }
 
 func getAudience(ctx context.Context, provider Provider,
-	serviceAccount *corev1.ServiceAccount, o *Options) (aud string, err error) {
-
-	if aud = o.Audience; aud != "" {
-		return
+	serviceAccount *corev1.ServiceAccount, o *Options) (string, error) {
+	if aud := o.GetAudience(serviceAccount); aud != "" {
+		return aud, nil
 	}
-
-	if serviceAccount != nil {
-		if aud = serviceAccount.Annotations[ServiceAccountAudience]; aud != "" {
-			return
-		}
-	}
-
-	if aud = o.Defaults.Audience; aud != "" {
-		return
-	}
-
 	return provider.GetDefaultAudience(ctx)
 }
 

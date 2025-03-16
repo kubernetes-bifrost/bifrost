@@ -37,6 +37,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -74,7 +75,7 @@ func TestGetToken(t *testing.T) {
 
 	// Grant anonymous access to service account issuer discovery.
 	err = kubeClient.Create(ctx, &rbacv1.ClusterRoleBinding{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: "anonymous-service-account-issuer-discovery",
 		},
 		Subjects: []rbacv1.Subject{
@@ -94,7 +95,7 @@ func TestGetToken(t *testing.T) {
 
 	// Create a default service account.
 	defaultServiceAccount := &corev1.ServiceAccount{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "default",
 			Namespace: "default",
 		},
@@ -113,7 +114,7 @@ func TestGetToken(t *testing.T) {
 
 	// Grant permission to the default service account to get itself.
 	err = kubeClient.Create(ctx, &rbacv1.Role{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "default-permissions",
 			Namespace: "default",
 		},
@@ -128,7 +129,7 @@ func TestGetToken(t *testing.T) {
 	})
 	g.Expect(err).NotTo(HaveOccurred())
 	err = kubeClient.Create(ctx, &rbacv1.RoleBinding{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "default-permissions",
 			Namespace: "default",
 		},
@@ -149,7 +150,7 @@ func TestGetToken(t *testing.T) {
 
 	// Create a manager service account.
 	managerServiceAccount := &corev1.ServiceAccount{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "manager",
 			Namespace: "default",
 		},
@@ -168,7 +169,7 @@ func TestGetToken(t *testing.T) {
 
 	// Grant manager the required permissions.
 	err = kubeClient.Create(ctx, &rbacv1.Role{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "manager-permissions",
 			Namespace: "default",
 		},
@@ -187,7 +188,7 @@ func TestGetToken(t *testing.T) {
 	})
 	g.Expect(err).NotTo(HaveOccurred())
 	err = kubeClient.Create(ctx, &rbacv1.RoleBinding{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "manager-permissions",
 			Namespace: "default",
 		},
@@ -208,7 +209,7 @@ func TestGetToken(t *testing.T) {
 
 	// Create service account pointing to unexisting proxy secret.
 	invalidProxySecretServiceAccount := &corev1.ServiceAccount{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "invalid-proxy-secret",
 			Namespace: "default",
 			Annotations: map[string]string{
@@ -221,7 +222,7 @@ func TestGetToken(t *testing.T) {
 
 	// Create service account pointing to proxy secret with missing address.
 	missingProxyAddressServiceAccount := &corev1.ServiceAccount{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "missing-proxy-address",
 			Namespace: "default",
 			Annotations: map[string]string{
@@ -232,7 +233,7 @@ func TestGetToken(t *testing.T) {
 	err = kubeClient.Create(ctx, missingProxyAddressServiceAccount)
 	g.Expect(err).NotTo(HaveOccurred())
 	missingProxyAddressSecret := &corev1.Secret{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "missing-proxy-address",
 			Namespace: "default",
 		},
@@ -243,7 +244,7 @@ func TestGetToken(t *testing.T) {
 
 	// Create service account pointing to proxy secret with invalid address.
 	invalidProxyAddressServiceAccount := &corev1.ServiceAccount{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "invalid-proxy-address",
 			Namespace: "default",
 			Annotations: map[string]string{
@@ -254,7 +255,7 @@ func TestGetToken(t *testing.T) {
 	err = kubeClient.Create(ctx, invalidProxyAddressServiceAccount)
 	g.Expect(err).NotTo(HaveOccurred())
 	invalidProxyAddressSecret := &corev1.Secret{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "invalid-proxy-address",
 			Namespace: "default",
 		},
@@ -267,7 +268,7 @@ func TestGetToken(t *testing.T) {
 
 	// Create service account pointing to proxy secret with username but no password.
 	missingProxyPasswordServiceAccount := &corev1.ServiceAccount{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "missing-proxy-password",
 			Namespace: "default",
 			Annotations: map[string]string{
@@ -278,7 +279,7 @@ func TestGetToken(t *testing.T) {
 	err = kubeClient.Create(ctx, missingProxyPasswordServiceAccount)
 	g.Expect(err).NotTo(HaveOccurred())
 	missingProxyPasswordSecret := &corev1.Secret{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "missing-proxy-password",
 			Namespace: "default",
 		},
@@ -292,7 +293,7 @@ func TestGetToken(t *testing.T) {
 
 	// Create service account pointing to proxy secret with password but no username.
 	missingProxyUsernameServiceAccount := &corev1.ServiceAccount{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "missing-proxy-username",
 			Namespace: "default",
 			Annotations: map[string]string{
@@ -303,7 +304,7 @@ func TestGetToken(t *testing.T) {
 	err = kubeClient.Create(ctx, missingProxyUsernameServiceAccount)
 	g.Expect(err).NotTo(HaveOccurred())
 	missingProxyUsernameSecret := &corev1.Secret{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "missing-proxy-username",
 			Namespace: "default",
 		},
@@ -317,7 +318,7 @@ func TestGetToken(t *testing.T) {
 
 	// Create service account with a configured audience.
 	saAudienceServiceAccount := &corev1.ServiceAccount{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "sa-audience",
 			Namespace: "default",
 			Annotations: map[string]string{
@@ -330,7 +331,7 @@ func TestGetToken(t *testing.T) {
 
 	// Create service account pointing to proxy secret with username and password.
 	proxySecretServiceAccount := &corev1.ServiceAccount{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "proxy-secret",
 			Namespace: "default",
 			Annotations: map[string]string{
@@ -341,7 +342,7 @@ func TestGetToken(t *testing.T) {
 	err = kubeClient.Create(ctx, proxySecretServiceAccount)
 	g.Expect(err).NotTo(HaveOccurred())
 	proxySecret := &corev1.Secret{
-		ObjectMeta: ctrl.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "proxy-secret",
 			Namespace: "default",
 		},

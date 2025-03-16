@@ -28,6 +28,8 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
 )
@@ -159,4 +161,69 @@ func TestOptions_ApplyProviderOptions(t *testing.T) {
 	var x int
 	o.ApplyProviderOptions(&x)
 	g.Expect(x).To(Equal(42))
+}
+
+func TestOptions_GetAudience(t *testing.T) {
+	for _, tt := range []struct {
+		name             string
+		opts             bifröst.Options
+		serviceAccount   *corev1.ServiceAccount
+		expectedAudience string
+	}{
+		{
+			name: "audience from options has precedence over all other sources",
+			opts: bifröst.Options{
+				Audience: "option-audience",
+				Defaults: &bifröst.Options{
+					Audience: "default-audience",
+				},
+			},
+			serviceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"serviceaccounts.bifrost-k8s.io/audience": "sa-audience",
+					},
+				},
+			},
+			expectedAudience: "option-audience",
+		},
+		{
+			name: "audience from service account has precedence over default",
+			opts: bifröst.Options{
+				Defaults: &bifröst.Options{
+					Audience: "default-audience",
+				},
+			},
+			serviceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"serviceaccounts.bifrost-k8s.io/audience": "sa-audience",
+					},
+				},
+			},
+			expectedAudience: "sa-audience",
+		},
+		{
+			name: "default audience",
+			opts: bifröst.Options{
+				Defaults: &bifröst.Options{
+					Audience: "default-audience",
+				},
+			},
+			expectedAudience: "default-audience",
+		},
+		{
+			name: "no audience",
+			opts: bifröst.Options{
+				Defaults: &bifröst.Options{},
+			},
+			expectedAudience: "",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			g.Expect(tt.opts.GetAudience(tt.serviceAccount)).To(Equal(tt.expectedAudience))
+		})
+	}
 }
