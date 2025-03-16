@@ -3,14 +3,13 @@
 <img src="./docs/img/logo.jpg" alt="Bifröst" width="300" height="300" />
 
 Bifröst helps you federate your service accounts to get secret-less
-access to resources from cloud providers by leveraging the Kubernetes
-built-in OpenID Connect (OIDC) functionality.
+access on cloud providers by leveraging the Kubernetes built-in
+OpenID Connect (OIDC) service account token issuer.
 
 The project has two main goals:
 
 * Provide Kubernetes users with an infrastructure component that can securely
-  provide applications with temporary access tokens for resources on cloud
-  providers without requiring any Secrets to be stored in the cluster.
-* Provide Kubernetes ecosystem maintainers with a library for implementing the
-  above functionality in their own Kubernetes API extensions i.e. in their own
-  Custom Resources.
+  fetch temporary tokens for applications so they can access cloud resources
+  without requiring any secrets to be configured.
+* Provide Kubernetes ecosystem maintainers with a secure and reliable library
+  for implementing the above functionality in their own controllers.
