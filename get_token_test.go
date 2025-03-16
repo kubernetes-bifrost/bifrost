@@ -35,6 +35,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/golang-jwt/jwt/v5"
 	. "github.com/onsi/gomega"
+	authnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -355,6 +356,16 @@ func TestGetToken(t *testing.T) {
 	err = kubeClient.Create(ctx, proxySecret)
 	g.Expect(err).NotTo(HaveOccurred())
 
+	// Create OIDC token for the provider-audience.
+	tokenReq := &authnv1.TokenRequest{
+		Spec: authnv1.TokenRequestSpec{
+			Audiences: []string{"provider-audience"},
+		},
+	}
+	err = kubeClient.SubResource("token").Create(ctx, defaultServiceAccount, tokenReq)
+	g.Expect(err).NotTo(HaveOccurred())
+	oidcToken := tokenReq.Status.Token
+
 	for _, tt := range []struct {
 		name          string
 		provider      mockProvider
@@ -380,9 +391,9 @@ func TestGetToken(t *testing.T) {
 			expectedError: "failed to get service account: serviceaccounts \"default\" not found",
 		},
 		{
-			name: "error on getting default audience",
+			name: "error on getting audience from provider",
 			provider: mockProvider{
-				defaultAudienceErr: true,
+				audienceErr: true,
 			},
 			opts: []bifröst.Option{
 				bifröst.WithServiceAccount(client.ObjectKey{
@@ -390,7 +401,7 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, kubeClient),
 			},
-			expectedError: "failed to get default provider audience for creating service account token: mock error",
+			expectedError: "failed to get provider audience: mock error",
 		},
 		{
 			name: "error on creating service account token",
@@ -400,7 +411,7 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, defaultClient),
 			},
-			expectedError: "failed to create kubernetes OIDC token for service account: serviceaccounts \"default\" is forbidden: User \"system:serviceaccount:default:default\" cannot create resource \"serviceaccounts/token\" in API group \"\" in the namespace \"default\"",
+			expectedError: "failed to create kubernetes service account token: serviceaccounts",
 		},
 		{
 			name: "error on creating access token for service account",
@@ -413,7 +424,58 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, managerClient),
 			},
-			expectedError: "failed to create provider access token for OIDC token: mock error",
+			expectedError: "failed to create provider access token: mock error",
+		},
+		{
+			name: "error on getting identity provider audience",
+			opts: []bifröst.Option{
+				bifröst.WithServiceAccount(client.ObjectKey{
+					Name:      "default",
+					Namespace: "default",
+				}, kubeClient),
+				bifröst.WithIdentityProvider(&mockProvider{
+					audienceErr: true,
+				}),
+			},
+			expectedError: "failed to get identity provider audience: mock error",
+		},
+		{
+			name: "error on creating service account token for identity provider",
+			opts: []bifröst.Option{
+				bifröst.WithServiceAccount(client.ObjectKey{
+					Name:      "default",
+					Namespace: "default",
+				}, defaultClient),
+				bifröst.WithIdentityProvider(&mockProvider{}),
+			},
+			expectedError: "failed to create kubernetes service account token: serviceaccounts",
+		},
+		{
+			name: "error on creating access token for identity provider",
+			opts: []bifröst.Option{
+				bifröst.WithServiceAccount(client.ObjectKey{
+					Name:      "default",
+					Namespace: "default",
+				}, kubeClient),
+				bifröst.WithIdentityProvider(&mockProvider{
+					tokenErr: true,
+				}),
+			},
+			expectedError: "failed to create identity provider access token: mock error",
+		},
+		{
+			name: "error on creating identity token",
+			opts: []bifröst.Option{
+				bifröst.WithServiceAccount(client.ObjectKey{
+					Name:      "default",
+					Namespace: "default",
+				}, kubeClient),
+				bifröst.WithIdentityProvider(&mockProvider{
+					token:        &mockToken{value: "oidc-token-access-token"},
+					oidcTokenErr: true,
+				}),
+			},
+			expectedError: "failed to create identity provider OIDC token: mock error",
 		},
 		{
 			name: "error on creating access token with container registry",
@@ -443,7 +505,7 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, kubeClient),
 			},
-			expectedError: "failed to get proxy secret from service account annotation: secrets \"non-existing\" not found",
+			expectedError: "failed to get proxy secret from service account annotation: secrets",
 		},
 		{
 			name: "proxy secret with missing address",
@@ -463,7 +525,7 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, kubeClient),
 			},
-			expectedError: "invalid proxy secret: failed to parse address: parse \"http://bifrost\\n\": net/url: invalid control character in URL",
+			expectedError: "invalid proxy secret: failed to parse address: parse",
 		},
 		{
 			name: "proxy secret with missing password",
@@ -493,7 +555,22 @@ func TestGetToken(t *testing.T) {
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{}),
 			},
-			expectedError: "failed to build cache key: mock error",
+			expectedError: "failed to build provider cache key: mock error",
+		},
+		{
+			name:     "error on building identity provider cache key",
+			provider: mockProvider{},
+			opts: []bifröst.Option{
+				bifröst.WithCache(&mockCache{}),
+				bifröst.WithServiceAccount(client.ObjectKey{
+					Name:      "default",
+					Namespace: "default",
+				}, kubeClient),
+				bifröst.WithIdentityProvider(&mockProvider{
+					cacheKeyErr: true,
+				}),
+			},
+			expectedError: "failed to build identity provider cache key: mock error",
 		},
 		{
 			name: "error on cache get or set",
@@ -519,7 +596,7 @@ func TestGetToken(t *testing.T) {
 			name: "cached service account token",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
-					key:   "452dbce1be84001302394dfeafa87046f49afa5833c027f814447a36003aba54",
+					key:   "4dc5e47d7de12f1a4badbfd6794ed5be4ca730cf2c755283abcedc0ef2736308",
 					token: &mockToken{value: "cached-token"},
 				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
@@ -528,6 +605,39 @@ func TestGetToken(t *testing.T) {
 				}, kubeClient),
 			},
 			expectedToken: &mockToken{value: "cached-token"},
+		},
+		{
+			name: "cached OIDC token access token",
+			opts: []bifröst.Option{
+				bifröst.WithCache(&mockCache{
+					key:   "487b74bf3fbb44da8b460231dd4c1a44986f2cd8f4764ff60b418a20b08eba39",
+					token: &mockToken{value: "cached-oidc-token-access-token"},
+				}),
+				bifröst.WithServiceAccount(client.ObjectKey{
+					Name:      "default",
+					Namespace: "default",
+				}, kubeClient),
+				bifröst.WithIdentityProvider(&mockProvider{}),
+				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "bifrost"}),
+			},
+			expectedToken: &mockToken{value: "cached-oidc-token-access-token"},
+		},
+		{
+			name: "cached registry token from OIDC token access token",
+			opts: []bifröst.Option{
+				bifröst.WithCache(&mockCache{
+					key:   "487b74bf3fbb44da8b460231dd4c1a44986f2cd8f4764ff60b418a20b08eba39",
+					token: &mockToken{value: "cached-oidc-token-registry-token"},
+				}),
+				bifröst.WithServiceAccount(client.ObjectKey{
+					Name:      "default",
+					Namespace: "default",
+				}, kubeClient),
+				bifröst.WithIdentityProvider(&mockProvider{}),
+				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "bifrost"}),
+				bifröst.WithContainerRegistry("test-registry"),
+			},
+			expectedToken: &mockToken{value: "cached-oidc-token-registry-token"},
 		},
 		{
 			name: "cached registry token from default",
@@ -544,7 +654,7 @@ func TestGetToken(t *testing.T) {
 			name: "cached registry token from service account",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
-					key:   "452dbce1be84001302394dfeafa87046f49afa5833c027f814447a36003aba54",
+					key:   "4dc5e47d7de12f1a4badbfd6794ed5be4ca730cf2c755283abcedc0ef2736308",
 					token: &mockToken{value: "cached-registry-token"},
 				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
@@ -576,6 +686,33 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "access-token"},
 		},
 		{
+			name: "OIDC token access token",
+			provider: mockProvider{
+				audience:        "provider-audience",
+				tokenAudience:   "provider-audience",
+				tokenOIDCClient: oidcClient,
+				token:           &mockToken{value: "oidc-token-access-token"},
+			},
+			opts: []bifröst.Option{
+				bifröst.WithServiceAccount(client.ObjectKey{
+					Name:      "default",
+					Namespace: "default",
+				}, kubeClient),
+				bifröst.WithIdentityProvider(&mockProvider{
+					audience:             "identity-provider-audience",
+					tokenAudience:        "identity-provider-audience",
+					tokenOIDCClient:      oidcClient,
+					token:                &mockToken{value: "identity-provider-access-token"},
+					oidcTokenAccessToken: &mockToken{value: "identity-provider-access-token"},
+					oidcToken:            oidcToken,
+				}),
+				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "bifrost"}),
+				bifröst.WithProviderOptions(func(any) {}),
+				bifröst.WithDefaults(bifröst.WithProviderOptions(func(any) {})),
+			},
+			expectedToken: &mockToken{value: "oidc-token-access-token"},
+		},
+		{
 			name: "registry token from default",
 			provider: mockProvider{
 				registryToken: &bifröst.ContainerRegistryToken{Username: "registry-default-token"},
@@ -600,9 +737,28 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &bifröst.ContainerRegistryToken{Username: "registry-token"},
 		},
 		{
+			name: "registry token from OIDC token access token",
+			provider: mockProvider{
+				token:                    &mockToken{value: "registry-oidc-token-access-token"},
+				registryToken:            &bifröst.ContainerRegistryToken{Username: "registry-oidc-token-access-token"},
+				registryTokenAccessToken: &mockToken{value: "registry-oidc-token-access-token"},
+			},
+			opts: []bifröst.Option{
+				bifröst.WithServiceAccount(client.ObjectKey{
+					Name:      "default",
+					Namespace: "default",
+				}, kubeClient),
+				bifröst.WithIdentityProvider(&mockProvider{
+					oidcToken: "oidc-token",
+				}),
+				bifröst.WithContainerRegistry("test-registry"),
+			},
+			expectedToken: &bifröst.ContainerRegistryToken{Username: "registry-oidc-token-access-token"},
+		},
+		{
 			name: "audience from options has precedence over all other sources",
 			provider: mockProvider{
-				defaultAudience: "provider-audience",
+				audience:        "provider-audience",
 				tokenAudience:   "option-audience",
 				tokenOIDCClient: oidcClient,
 				token:           &mockToken{value: "option-audience-token"},
@@ -620,7 +776,7 @@ func TestGetToken(t *testing.T) {
 		{
 			name: "service account audience has priority over defaults",
 			provider: mockProvider{
-				defaultAudience: "provider-audience",
+				audience:        "provider-audience",
 				tokenAudience:   "sa-audience",
 				tokenOIDCClient: oidcClient,
 				token:           &mockToken{value: "sa-audience-token"},
@@ -635,9 +791,9 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "sa-audience-token"},
 		},
 		{
-			name: "audience from default options has priority over provider default audience",
+			name: "audience from default options has priority over audience from provider",
 			provider: mockProvider{
-				defaultAudience: "provider-audience",
+				audience:        "provider-audience",
 				tokenAudience:   "default-audience",
 				tokenOIDCClient: oidcClient,
 				token:           &mockToken{value: "default-audience-token"},
@@ -652,9 +808,9 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "default-audience-token"},
 		},
 		{
-			name: "provider default audience",
+			name: "audience from provider",
 			provider: mockProvider{
-				defaultAudience: "provider-audience",
+				audience:        "provider-audience",
 				tokenAudience:   "provider-audience",
 				tokenOIDCClient: oidcClient,
 				token:           &mockToken{value: "provider-audience-token"},
@@ -735,20 +891,23 @@ type mockCache struct {
 }
 
 type mockProvider struct {
-	cacheKey             string
-	cacheKeyErr          bool
-	defaultToken         bifröst.Token
-	defaultTokenErr      bool
-	defaultTokenProxyURL string
-	defaultAudience      string
-	defaultAudienceErr   bool
-	token                bifröst.Token
-	tokenErr             bool
-	tokenAudience        string
-	tokenProxyURL        string
-	tokenOIDCClient      *http.Client
-	registryToken        *bifröst.ContainerRegistryToken
-	registryTokenErr     bool
+	cacheKeyErr              bool
+	defaultToken             bifröst.Token
+	defaultTokenErr          bool
+	defaultTokenProxyURL     string
+	audience                 string
+	audienceErr              bool
+	token                    bifröst.Token
+	tokenErr                 bool
+	tokenAudience            string
+	tokenProxyURL            string
+	tokenOIDCClient          *http.Client
+	oidcToken                string
+	oidcTokenErr             bool
+	oidcTokenAccessToken     bifröst.Token
+	registryToken            *bifröst.ContainerRegistryToken
+	registryTokenErr         bool
+	registryTokenAccessToken bifröst.Token
 }
 
 func (*mockToken) GetDuration() time.Duration {
@@ -767,10 +926,10 @@ func (*mockProvider) GetName() string {
 }
 
 func (m *mockProvider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...bifröst.Option) (string, error) {
-	return m.cacheKey, getError(m.cacheKeyErr)
+	return "", getError(m.cacheKeyErr)
 }
 
-func (m *mockProvider) NewDefaultToken(ctx context.Context, opts ...bifröst.Option) (bifröst.Token, error) {
+func (m *mockProvider) NewDefaultAccessToken(ctx context.Context, opts ...bifröst.Option) (bifröst.Token, error) {
 
 	// Check proxy URL.
 	if m.defaultTokenProxyURL != "" {
@@ -788,11 +947,11 @@ func (m *mockProvider) NewDefaultToken(ctx context.Context, opts ...bifröst.Opt
 	return m.defaultToken, getError(m.defaultTokenErr)
 }
 
-func (m *mockProvider) GetDefaultAudience(ctx context.Context) (string, error) {
-	return m.defaultAudience, getError(m.defaultAudienceErr)
+func (m *mockProvider) GetAudience(ctx context.Context) (string, error) {
+	return m.audience, getError(m.audienceErr)
 }
 
-func (m *mockProvider) NewTokenForServiceAccount(ctx context.Context, oidcToken string,
+func (m *mockProvider) NewAccessToken(ctx context.Context, oidcToken string,
 	serviceAccount *corev1.ServiceAccount, opts ...bifröst.Option) (bifröst.Token, error) {
 
 	// Verify OIDC token with issuer and audience.
@@ -834,8 +993,31 @@ func (m *mockProvider) NewTokenForServiceAccount(ctx context.Context, oidcToken 
 	return m.token, getError(m.tokenErr)
 }
 
+func (m *mockProvider) NewOIDCToken(ctx context.Context, token bifröst.Token,
+	audience string, opts ...bifröst.Option) (string, error) {
+
+	// Check access token.
+	if m.oidcTokenAccessToken != nil {
+		if token.(*mockToken).value != m.oidcTokenAccessToken.(*mockToken).value {
+			return "", fmt.Errorf("expected access token %q, got %q",
+				m.oidcTokenAccessToken.(*mockToken).value, token.(*mockToken).value)
+		}
+	}
+
+	return m.oidcToken, getError(m.oidcTokenErr)
+}
+
 func (m *mockProvider) NewRegistryToken(ctx context.Context, containerRegistry string,
 	token bifröst.Token, opts ...bifröst.Option) (*bifröst.ContainerRegistryToken, error) {
+
+	// Check access token.
+	if m.registryTokenAccessToken != nil {
+		if token.(*mockToken).value != m.registryTokenAccessToken.(*mockToken).value {
+			return nil, fmt.Errorf("expected access token %q, got %q",
+				m.registryTokenAccessToken.(*mockToken).value, token.(*mockToken).value)
+		}
+	}
+
 	return m.registryToken, getError(m.registryTokenErr)
 }
 

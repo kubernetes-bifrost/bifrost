@@ -30,21 +30,6 @@ type Token interface {
 	GetDuration() time.Duration
 }
 
-// OIDCToken represents a temporary identity token attesting to a cloud provider
-// identity. It was issued for a specific audience and is valid until a specific
-// time.
-type OIDCToken struct {
-	Token     string
-	Audience  string
-	Identity  Identity
-	ExpiresAt time.Time
-}
-
-// GetDuration returns the duration for which the token is valid.
-func (o *OIDCToken) GetDuration() time.Duration {
-	return time.Until(o.ExpiresAt)
-}
-
 // ContainerRegistryToken represents a temporary access token for a container registry.
 type ContainerRegistryToken struct {
 	Username  string

@@ -38,23 +38,23 @@ type Provider interface {
 	// The service account is optional.
 	BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...Option) (string, error)
 
-	// NewDefaultToken returns a token that can be used to authenticate with the
-	// cloud provider retrieved from the default source, i.e. from the pod's
-	// environment, e.g. files mounted in the pod, environment variables,
-	// local metadata services, etc.
-	NewDefaultToken(ctx context.Context, opts ...Option) (Token, error)
+	// NewDefaultAccessToken returns a access token that can be used to authenticate
+	// with the cloud provider retrieved from the default source, i.e. from the pod's
+	// environment, e.g. files mounted in the pod, environment variables, local
+	// metadata services, etc.
+	NewDefaultAccessToken(ctx context.Context, opts ...Option) (Token, error)
 
-	// GetDefaultAudience returns the audience the OIDC tokens issued representing
-	// service accounts should have. The audience is retrieved from the environment.
-	GetDefaultAudience(ctx context.Context) (string, error)
+	// GetAudience returns the audience OIDC tokens issued for creating access
+	// tokens for the provider should have.
+	GetAudience(ctx context.Context) (string, error)
 
-	// NewToken takes a service account and its OIDC token and returns a token
+	// NewAccessToken takes a service account and its OIDC token and returns a token
 	// that can be used to authenticate with the cloud provider.
-	NewTokenForServiceAccount(ctx context.Context, oidcToken string,
+	NewAccessToken(ctx context.Context, oidcToken string,
 		serviceAccount *corev1.ServiceAccount, opts ...Option) (Token, error)
 
 	// NewRegistryToken takes a container registry host and a Token created with
-	// either NewDefaultToken() or NewTokenForServiceAccount() and returns a token
+	// either NewDefaultAccessToken() or NewAccessToken() and returns a token
 	// that can be used to authenticate with that container registry.
 	NewRegistryToken(ctx context.Context, containerRegistry string,
 		token Token, opts ...Option) (*ContainerRegistryToken, error)
@@ -68,5 +68,5 @@ type OIDCProvider interface {
 	// an audience and returns an OIDC token that attests to the identity and
 	// targets the audience.
 	NewOIDCToken(ctx context.Context, token Token,
-		audience string, identity Identity, opts ...Option) (*OIDCToken, error)
+		audience string, opts ...Option) (string, error)
 }
