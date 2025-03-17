@@ -57,7 +57,7 @@ type Provider interface {
 	// either NewDefaultAccessToken() or NewAccessToken() and returns a token
 	// that can be used to authenticate with that container registry.
 	NewRegistryToken(ctx context.Context, containerRegistry string,
-		token Token, opts ...Option) (*ContainerRegistryToken, error)
+		accessToken Token, opts ...Option) (*ContainerRegistryToken, error)
 }
 
 // OIDCProvider extends Provider with a method for creating OIDC tokens.
@@ -67,6 +67,7 @@ type OIDCProvider interface {
 	// NewOIDCToken takes an access token, an identity to be impesonated and
 	// an audience and returns an OIDC token that attests to the identity and
 	// targets the audience.
-	NewOIDCToken(ctx context.Context, token Token,
+	NewOIDCToken(ctx context.Context, accessToken Token,
+		serviceAccount *corev1.ServiceAccount,
 		audience string, opts ...Option) (string, error)
 }

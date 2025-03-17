@@ -117,12 +117,14 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 					opts = append(opts, WithDefaults(WithProviderOptions(o.Defaults.ProviderOptions...)))
 				}
 
-				accessToken, err := identityProvider.NewAccessToken(ctx, saToken, serviceAccount, opts...)
+				accessToken, err := identityProvider.NewAccessToken(ctx,
+					saToken, serviceAccount, append(opts, WithDirectAccess())...)
 				if err != nil {
 					return "", fmt.Errorf("failed to create identity provider access token: %w", err)
 				}
 
-				oidcToken, err := identityProvider.NewOIDCToken(ctx, accessToken, providerAudience, opts...)
+				oidcToken, err := identityProvider.NewOIDCToken(ctx,
+					accessToken, serviceAccount, providerAudience, opts...)
 				if err != nil {
 					return "", fmt.Errorf("failed to create identity provider OIDC token: %w", err)
 				}
