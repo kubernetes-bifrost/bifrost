@@ -33,11 +33,11 @@ import (
 
 // Options contains the configuration options for getting a token.
 type Options struct {
-	HTTPClient        *http.Client
-	DirectAccess      bool
-	ContainerRegistry string
-	ProviderOptions   []ProviderOption
-	Defaults          *Options
+	HTTPClient         *http.Client
+	PreferDirectAccess bool
+	ContainerRegistry  string
+	ProviderOptions    []ProviderOption
+	Defaults           *Options
 
 	cache             Cache
 	client            Client
@@ -119,13 +119,12 @@ func WithProxyURL(proxyURL url.URL) Option {
 	}
 }
 
-// WithDirectAccess sets the direct access flag for getting the token.
-// It forces access tokens to be issued representing the service account
-// directly, without impersonating an identity from the cloud provider.
-// Not all cloud providers support this.
-func WithDirectAccess() Option {
+// WithPreferDirectAccess sets the prefer direct access flag for getting the token.
+// It suggests that the provider should issue a token representing the service account
+// directly if possible, instead of an identity of the provider.
+func WithPreferDirectAccess() Option {
 	return func(o *Options) {
-		o.DirectAccess = true
+		o.PreferDirectAccess = true
 	}
 }
 

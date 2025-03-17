@@ -1016,7 +1016,7 @@ func (m *mockProvider) NewAccessToken(ctx context.Context, identityToken string,
 	}
 
 	// Check direct access.
-	if m.tokenExpectDirectAccess && !o.DirectAccess {
+	if m.tokenExpectDirectAccess && !o.PreferDirectAccess {
 		return nil, fmt.Errorf("expected direct access, got false")
 	}
 

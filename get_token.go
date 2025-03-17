@@ -118,7 +118,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 				}
 
 				accessToken, err := identityProvider.NewAccessToken(ctx,
-					saToken, serviceAccount, append(opts, WithDirectAccess())...)
+					saToken, serviceAccount, append(opts, WithPreferDirectAccess())...)
 				if err != nil {
 					return "", fmt.Errorf("failed to create identity provider access token: %w", err)
 				}
