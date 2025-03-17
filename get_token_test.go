@@ -434,6 +434,7 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, kubeClient),
 				bifröst.WithIdentityProvider(&mockProvider{
+					name:        "idp",
 					audienceErr: true,
 				}),
 			},
@@ -446,7 +447,9 @@ func TestGetToken(t *testing.T) {
 					Name:      "default",
 					Namespace: "default",
 				}, defaultClient),
-				bifröst.WithIdentityProvider(&mockProvider{}),
+				bifröst.WithIdentityProvider(&mockProvider{
+					name: "idp",
+				}),
 			},
 			expectedError: "failed to create kubernetes service account token: serviceaccounts",
 		},
@@ -458,6 +461,7 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, kubeClient),
 				bifröst.WithIdentityProvider(&mockProvider{
+					name:     "idp",
 					tokenErr: true,
 				}),
 			},
@@ -471,6 +475,7 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, kubeClient),
 				bifröst.WithIdentityProvider(&mockProvider{
+					name:             "idp",
 					token:            &mockToken{value: "identity-token-access-token"},
 					identityTokenErr: true,
 				}),
@@ -567,6 +572,7 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, kubeClient),
 				bifröst.WithIdentityProvider(&mockProvider{
+					name:        "idp",
 					cacheKeyErr: true,
 				}),
 			},
@@ -586,7 +592,7 @@ func TestGetToken(t *testing.T) {
 			name: "cached default token",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
-					key:   "893e00a7e91f9bf03343e8ab9139fdc9077f5c8f4be6c1bcfc0871ad2d2f365c",
+					key:   "b7dfea44cb4545bb43d7b7355b4b766fac8f7f669f72743f62c1d4a8bfe2af93",
 					token: &mockToken{value: "cached-default-token"},
 				}),
 			},
@@ -596,7 +602,7 @@ func TestGetToken(t *testing.T) {
 			name: "cached service account token",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
-					key:   "4dc5e47d7de12f1a4badbfd6794ed5be4ca730cf2c755283abcedc0ef2736308",
+					key:   "ab4572406e9fa61442fda6423e6c0728c2f43155f83e060341e83961cf6b7903",
 					token: &mockToken{value: "cached-token"},
 				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
@@ -610,14 +616,16 @@ func TestGetToken(t *testing.T) {
 			name: "cached identity token access token",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
-					key:   "487b74bf3fbb44da8b460231dd4c1a44986f2cd8f4764ff60b418a20b08eba39",
+					key:   "6f02da35ec951a19f3cdaf0fdf014dfcf58fa4f8a658f2272ca130165948357a",
 					token: &mockToken{value: "cached-identity-token-access-token"},
 				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "default",
 					Namespace: "default",
 				}, kubeClient),
-				bifröst.WithIdentityProvider(&mockProvider{}),
+				bifröst.WithIdentityProvider(&mockProvider{
+					name: "idp",
+				}),
 				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "bifrost"}),
 			},
 			expectedToken: &mockToken{value: "cached-identity-token-access-token"},
@@ -626,14 +634,16 @@ func TestGetToken(t *testing.T) {
 			name: "cached container registry login from identity token access token",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
-					key:   "487b74bf3fbb44da8b460231dd4c1a44986f2cd8f4764ff60b418a20b08eba39",
+					key:   "5f756d38a58f271d5ef964c8dfc16992fd0dc94e0363bdba32fb51dcbdea4255",
 					token: &mockToken{value: "cached-identity-token-registry-token"},
 				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
 					Name:      "default",
 					Namespace: "default",
 				}, kubeClient),
-				bifröst.WithIdentityProvider(&mockProvider{}),
+				bifröst.WithIdentityProvider(&mockProvider{
+					name: "idp",
+				}),
 				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "bifrost"}),
 				bifröst.WithContainerRegistry("test-registry"),
 			},
@@ -643,7 +653,7 @@ func TestGetToken(t *testing.T) {
 			name: "cached container registry login from default",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
-					key:   "893e00a7e91f9bf03343e8ab9139fdc9077f5c8f4be6c1bcfc0871ad2d2f365c",
+					key:   "b8021e4017c05ed7e960339f386a0a92310b7c5b19bb6209eae1efb0745846c7",
 					token: &mockToken{value: "cached-registry-default-token"},
 				}),
 				bifröst.WithContainerRegistry("test-registry"),
@@ -654,7 +664,7 @@ func TestGetToken(t *testing.T) {
 			name: "cached container registry login from service account",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
-					key:   "4dc5e47d7de12f1a4badbfd6794ed5be4ca730cf2c755283abcedc0ef2736308",
+					key:   "6cca0eb7fea5c3d956347da39af6db9a09138b6c6c2f77c39bf5ce5c1b749a8a",
 					token: &mockToken{value: "cached-registry-token"},
 				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
@@ -703,6 +713,7 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, kubeClient),
 				bifröst.WithIdentityProvider(&mockProvider{
+					name:                     "idp",
 					audience:                 "identity-provider-audience",
 					tokenAudience:            "identity-provider-audience",
 					tokenProxyURL:            "http://bifrost",
@@ -765,6 +776,7 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, kubeClient),
 				bifröst.WithIdentityProvider(&mockProvider{
+					name:                     "idp",
 					audience:                 "identity-provider-audience",
 					tokenAudience:            "identity-provider-audience",
 					tokenOIDCClient:          oidcClient,
@@ -913,6 +925,7 @@ type mockCache struct {
 }
 
 type mockProvider struct {
+	name                     string
 	cacheKeyErr              bool
 	defaultToken             bifröst.Token
 	defaultTokenErr          bool
@@ -944,12 +957,24 @@ func (m *mockCache) GetOrSet(key string, newToken func() (bifröst.Token, error)
 	return newToken()
 }
 
-func (*mockProvider) GetName() string {
+func (m *mockProvider) GetName() string {
+	if m.name != "" {
+		return m.name
+	}
 	return "mock"
 }
 
 func (m *mockProvider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...bifröst.Option) (string, error) {
-	return "", getError(m.cacheKeyErr)
+	var o bifröst.Options
+	o.Apply(opts...)
+
+	var keyParts []string
+
+	if o.ContainerRegistry != "" {
+		keyParts = append(keyParts, fmt.Sprintf("containerRegistry=%s", o.ContainerRegistry))
+	}
+
+	return bifröst.BuildCacheKeyFromParts(keyParts...), getError(m.cacheKeyErr)
 }
 
 func (m *mockProvider) NewDefaultAccessToken(ctx context.Context, opts ...bifröst.Option) (bifröst.Token, error) {
