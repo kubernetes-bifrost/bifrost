@@ -112,14 +112,14 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 
 	// Initialize registry token fetcher if container registry is specified.
 	newToken := newAccessToken
-	if o.ContainerRegistry != "" {
+	if o.GetContainerRegistry() != "" {
 		newToken = func() (Token, error) {
 			accessToken, err := newAccessToken()
 			if err != nil {
 				return nil, err
 			}
 
-			token, err := provider.NewRegistryLogin(ctx, o.ContainerRegistry, accessToken, opts...)
+			token, err := provider.NewRegistryLogin(ctx, o.GetContainerRegistry(), accessToken, opts...)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create container registry login: %w", err)
 			}
@@ -133,7 +133,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 	if err != nil {
 		return nil, err
 	}
-	if proxyURL != nil && o.HTTPClient == nil {
+	if proxyURL != nil && o.httpClient == nil {
 		opt := WithProxyURL(*proxyURL)
 		opts = append(opts, opt)
 		opt(&o)
@@ -220,13 +220,13 @@ func urlFromClient(hc *http.Client) *url.URL {
 func getProxyURL(ctx context.Context, serviceAccount *corev1.ServiceAccount, o *Options) (*url.URL, error) {
 
 	// o.HTTPClient takes precedence over everything else
-	if hc := o.HTTPClient; hc != nil {
+	if hc := o.httpClient; hc != nil {
 		return urlFromClient(hc), nil
 	}
 
 	// If a proxy secret is not set in service account, return the default
 	if serviceAccount == nil || serviceAccount.Annotations[ServiceAccountProxySecretName] == "" {
-		return urlFromClient(o.Defaults.HTTPClient), nil
+		return urlFromClient(o.Defaults.httpClient), nil
 	}
 
 	// Fetch proxy secret.
