@@ -24,12 +24,9 @@ package bifröst
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"net/url"
-	"slices"
-	"strings"
 
 	authnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -309,9 +306,5 @@ func buildCacheKey(provider, identityProvider Provider, serviceAccount *corev1.S
 		keyParts = append(keyParts, fmt.Sprintf("proxyURL=%s", proxyURL))
 	}
 
-	// Join parts and return hash.
-	slices.Sort(keyParts) // Make it stable for tests.
-	s := strings.Join(keyParts, ",")
-	hash := sha256.Sum256([]byte(s))
-	return fmt.Sprintf("%x", hash), nil
+	return BuildCacheKeyFromParts(keyParts...), nil
 }

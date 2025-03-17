@@ -22,10 +22,25 @@
 
 package bifröst
 
+import (
+	"crypto/sha256"
+	"fmt"
+	"slices"
+	"strings"
+)
+
 // Cache is an interface for caching tokens.
 type Cache interface {
 	// GetOrSet gets a token from the cache if present and not expired.
 	// If the token is not present or expired, it calls newToken to get a new
 	// token and stores it in the cache.
 	GetOrSet(key string, newToken func() (Token, error)) (Token, error)
+}
+
+// BuildCacheKeyFromParts builds a cache key from parts.
+func BuildCacheKeyFromParts(parts ...string) string {
+	slices.Sort(parts) // Make it stable for tests.
+	s := strings.Join(parts, ",")
+	hash := sha256.Sum256([]byte(s))
+	return fmt.Sprintf("%x", hash)
 }
