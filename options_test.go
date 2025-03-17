@@ -40,10 +40,10 @@ func TestWithProxyURL(t *testing.T) {
 	var o bifröst.Options
 	bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "localhost"})(&o)
 
-	g.Expect(o.HTTPClient).NotTo(BeNil())
-	g.Expect(o.HTTPClient.Transport).NotTo(BeNil())
+	g.Expect(o.GetHTTPClient()).NotTo(BeNil())
+	g.Expect(o.GetHTTPClient().Transport).NotTo(BeNil())
 
-	transport := o.HTTPClient.Transport.(*http.Transport)
+	transport := o.GetHTTPClient().Transport.(*http.Transport)
 	g.Expect(transport).NotTo(BeNil())
 
 	proxy := transport.Proxy
@@ -218,6 +218,112 @@ func TestOptions_GetAudience(t *testing.T) {
 			o.Apply(tt.opts...)
 
 			g.Expect(o.GetAudience(tt.serviceAccount)).To(Equal(tt.expectedAudience))
+		})
+	}
+}
+
+func TestOptions_GetHTTPClient(t *testing.T) {
+	proxyURL := url.URL{Scheme: "http", Host: "localhost"}
+
+	for _, tt := range []struct {
+		name               string
+		opts               []bifröst.Option
+		httpClientExpected bool
+	}{
+		{
+			name:               "expected",
+			opts:               []bifröst.Option{bifröst.WithProxyURL(proxyURL)},
+			httpClientExpected: true,
+		},
+		{
+			name:               "default is not used",
+			opts:               []bifröst.Option{bifröst.WithDefaults(bifröst.WithProxyURL(proxyURL))},
+			httpClientExpected: false,
+		},
+		{
+			name:               "no proxy URL",
+			httpClientExpected: false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var o bifröst.Options
+			o.Apply(tt.opts...)
+
+			g.Expect(o.GetHTTPClient() != nil).To(Equal(tt.httpClientExpected))
+		})
+	}
+}
+
+func TestOptions_GetContainerRegistry(t *testing.T) {
+	for _, tt := range []struct {
+		name                 string
+		opts                 []bifröst.Option
+		expectedRegistryHost string
+	}{
+		{
+			name:                 "expected",
+			opts:                 []bifröst.Option{bifröst.WithContainerRegistry("gcr.io")},
+			expectedRegistryHost: "gcr.io",
+		},
+		{
+			name:                 "default is not used",
+			opts:                 []bifröst.Option{bifröst.WithDefaults(bifröst.WithContainerRegistry("gcr.io"))},
+			expectedRegistryHost: "",
+		},
+		{
+			name:                 "no registry host",
+			expectedRegistryHost: "",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var o bifröst.Options
+			o.Apply(tt.opts...)
+
+			g.Expect(o.GetContainerRegistry()).To(Equal(tt.expectedRegistryHost))
+		})
+	}
+}
+
+func TestOptions_GetPreferDirectAccess(t *testing.T) {
+	for _, tt := range []struct {
+		name               string
+		opts               []bifröst.Option
+		preferDirectAccess bool
+	}{
+		{
+			name:               "main option only",
+			opts:               []bifröst.Option{bifröst.WithPreferDirectAccess()},
+			preferDirectAccess: true,
+		},
+		{
+			name:               "default option only",
+			opts:               []bifröst.Option{bifröst.WithDefaults(bifröst.WithPreferDirectAccess())},
+			preferDirectAccess: true,
+		},
+		{
+			name: "both",
+			opts: []bifröst.Option{
+				bifröst.WithPreferDirectAccess(),
+				bifröst.WithDefaults(bifröst.WithPreferDirectAccess()),
+			},
+			preferDirectAccess: true,
+		},
+		{
+			name:               "neither",
+			preferDirectAccess: false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var o bifröst.Options
+			o.Apply(tt.opts...)
+
+			g.Expect(o.GetPreferDirectAccess()).To(Equal(tt.preferDirectAccess))
 		})
 	}
 }

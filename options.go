@@ -33,17 +33,17 @@ import (
 
 // Options contains the configuration options for getting a token.
 type Options struct {
-	HTTPClient         *http.Client
-	PreferDirectAccess bool
-	ContainerRegistry  string
-	ProviderOptions    []ProviderOption
-	Defaults           *Options
+	ProviderOptions []ProviderOption
+	Defaults        *Options
 
-	cache             Cache
-	client            Client
-	serviceAccountRef *client.ObjectKey
-	audience          string
-	identityProvider  IdentityProvider
+	cache              Cache
+	client             Client
+	serviceAccountRef  *client.ObjectKey
+	audience           string
+	identityProvider   IdentityProvider
+	httpClient         *http.Client
+	containerRegistry  string
+	preferDirectAccess bool
 }
 
 // Option is a functional option for getting a token.
@@ -115,7 +115,14 @@ func WithProxyURL(proxyURL url.URL) Option {
 	httpClient := &http.Client{Transport: transport}
 
 	return func(o *Options) {
-		o.HTTPClient = httpClient
+		o.httpClient = httpClient
+	}
+}
+
+// WithContainerRegistry sets the container registry host for getting the token.
+func WithContainerRegistry(registry string) Option {
+	return func(o *Options) {
+		o.containerRegistry = registry
 	}
 }
 
@@ -124,14 +131,7 @@ func WithProxyURL(proxyURL url.URL) Option {
 // directly if possible, instead of an identity of the provider.
 func WithPreferDirectAccess() Option {
 	return func(o *Options) {
-		o.PreferDirectAccess = true
-	}
-}
-
-// WithContainerRegistry sets the container registry host for getting the token.
-func WithContainerRegistry(registry string) Option {
-	return func(o *Options) {
-		o.ContainerRegistry = registry
+		o.preferDirectAccess = true
 	}
 }
 
@@ -167,8 +167,8 @@ func (o *Options) ApplyProviderOptions(opts any) {
 	}
 }
 
-// GetAudience returns the configured audience taking into account the service account
-// annotation and the default audience.
+// GetAudience returns the configured audience taking into account the
+// service account annotation.
 func (o *Options) GetAudience(serviceAccount *corev1.ServiceAccount) (aud string) {
 	if aud = o.audience; aud != "" {
 		return
@@ -185,4 +185,27 @@ func (o *Options) GetAudience(serviceAccount *corev1.ServiceAccount) (aud string
 	}
 
 	return
+}
+
+// GetHTTPClient returns the HTTP client for getting the token.
+func (o *Options) GetHTTPClient() *http.Client {
+	// GetToken resolves the HTTP client from the options
+	// and from the service account, which may contain a
+	// reference to a proxy secret.
+	return o.httpClient
+}
+
+// GetContainerRegistry returns the container registry host for
+// getting the token.
+func (o *Options) GetContainerRegistry() string {
+	// Container registries should not be set on the service account
+	// nor on the defaults. It's a per-request option.
+	return o.containerRegistry
+}
+
+// GetPreferDirectAccess returns the prefer direct access flag.
+func (o *Options) GetPreferDirectAccess() bool {
+	// Prefer direct access could be set on the service account
+	// but we don't expose an API annotation for that yet.
+	return o.preferDirectAccess || o.Defaults.preferDirectAccess
 }

@@ -964,8 +964,8 @@ func (m *mockProvider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts
 
 	var keyParts []string
 
-	if o.ContainerRegistry != "" {
-		keyParts = append(keyParts, fmt.Sprintf("containerRegistry=%s", o.ContainerRegistry))
+	if o.GetContainerRegistry() != "" {
+		keyParts = append(keyParts, fmt.Sprintf("containerRegistry=%s", o.GetContainerRegistry()))
 	}
 
 	return bifröst.BuildCacheKeyFromParts(keyParts...), getError(m.cacheKeyErr)
@@ -977,10 +977,10 @@ func (m *mockProvider) NewDefaultAccessToken(ctx context.Context, opts ...bifrö
 	if m.defaultTokenProxyURL != "" {
 		var o bifröst.Options
 		o.Apply(opts...)
-		if o.HTTPClient == nil {
+		if o.GetHTTPClient() == nil {
 			return nil, fmt.Errorf("expected HTTP client with proxy URL, got nil")
 		}
-		proxyURL, _ := o.HTTPClient.Transport.(*http.Transport).Proxy(nil)
+		proxyURL, _ := o.GetHTTPClient().Transport.(*http.Transport).Proxy(nil)
 		if proxyURL.String() != m.defaultTokenProxyURL {
 			return nil, fmt.Errorf("expected proxy URL %q, got %q", m.defaultTokenProxyURL, proxyURL)
 		}
@@ -1025,17 +1025,17 @@ func (m *mockProvider) NewAccessToken(ctx context.Context, identityToken string,
 
 	// Check proxy URL.
 	if m.tokenProxyURL != "" {
-		if o.HTTPClient == nil {
+		if o.GetHTTPClient() == nil {
 			return nil, fmt.Errorf("expected HTTP client with proxy URL, got nil")
 		}
-		proxyURL, _ := o.HTTPClient.Transport.(*http.Transport).Proxy(nil)
+		proxyURL, _ := o.GetHTTPClient().Transport.(*http.Transport).Proxy(nil)
 		if proxyURL.String() != m.tokenProxyURL {
 			return nil, fmt.Errorf("expected proxy URL %q, got %q", m.tokenProxyURL, proxyURL)
 		}
 	}
 
 	// Check direct access.
-	if m.tokenExpectDirectAccess && !o.PreferDirectAccess {
+	if m.tokenExpectDirectAccess && !o.GetPreferDirectAccess() {
 		return nil, fmt.Errorf("expected direct access, got false")
 	}
 

@@ -20,7 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// bifröst helps applications running in Kubernetes to easily authenticate
-// with cloud providers for accessing resources. No secret credentials are
-// required.
+// bifröst helps applications running in Kubernetes easily authenticate
+// with cloud providers for accessing resources without using secrets.
 package bifröst
