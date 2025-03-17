@@ -24,22 +24,25 @@ package http
 
 import (
 	"net"
+	"strings"
 	"testing"
 
-	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega"
 )
 
 func NewListener(t *testing.T) net.Listener {
 	t.Helper()
 
-	g := NewWithT(t)
+	g := gomega.NewWithT(t)
 
 	lis, err := net.Listen("tcp", ":0")
-	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(err).NotTo(gomega.HaveOccurred())
 
 	t.Cleanup(func() {
 		err := lis.Close()
-		g.Expect(err).NotTo(HaveOccurred())
+		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
+			g.Expect(err).NotTo(gomega.HaveOccurred())
+		}
 	})
 
 	return lis

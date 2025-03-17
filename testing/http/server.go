@@ -32,22 +32,22 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega"
 )
 
 func NewServer(t *testing.T, handler http.Handler) (string, int) {
 	t.Helper()
 
-	g := NewWithT(t)
+	g := gomega.NewWithT(t)
 
 	lis := NewListener(t)
 	addr := lis.Addr().String()
 
 	_, portString, err := net.SplitHostPort(addr)
-	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(err).NotTo(gomega.HaveOccurred())
 
 	port, err := strconv.Atoi(portString)
-	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(err).NotTo(gomega.HaveOccurred())
 
 	endpoint := fmt.Sprintf("http://%s", addr)
 
@@ -58,8 +58,8 @@ func NewServer(t *testing.T, handler http.Handler) (string, int) {
 
 	go func() {
 		err := s.Serve(lis)
-		if err != nil {
-			g.Expect(errors.Is(err, http.ErrServerClosed)).To(BeTrue())
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			g.Expect(err).NotTo(gomega.HaveOccurred())
 		}
 	}()
 
@@ -67,7 +67,7 @@ func NewServer(t *testing.T, handler http.Handler) (string, int) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		err := s.Shutdown(ctx)
-		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(err).NotTo(gomega.HaveOccurred())
 	})
 
 	return endpoint, port
