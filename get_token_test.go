@@ -378,7 +378,7 @@ func TestGetToken(t *testing.T) {
 			provider: mockProvider{
 				defaultTokenErr: true,
 			},
-			expectedError: "failed to create provider default access token: mock error",
+			expectedError: "failed to create default access token: mock error",
 		},
 		{
 			name: "error on getting service account",
@@ -424,7 +424,7 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, managerClient),
 			},
-			expectedError: "failed to create provider access token: mock error",
+			expectedError: "failed to create access token: mock error",
 		},
 		{
 			name: "error on getting identity provider audience",
@@ -478,24 +478,24 @@ func TestGetToken(t *testing.T) {
 			expectedError: "failed to create identity provider OIDC token: mock error",
 		},
 		{
-			name: "error on creating access token with container registry",
+			name: "error on creating default access token with container registry",
 			provider: mockProvider{
 				defaultTokenErr: true,
 			},
 			opts: []bifröst.Option{
 				bifröst.WithContainerRegistry("test-registry"),
 			},
-			expectedError: "failed to create provider default access token: mock error",
+			expectedError: "failed to create default access token: mock error",
 		},
 		{
-			name: "error on creating registry token",
+			name: "error on creating container registry login",
 			provider: mockProvider{
-				registryTokenErr: true,
+				registryLoginErr: true,
 			},
 			opts: []bifröst.Option{
 				bifröst.WithContainerRegistry("test-registry"),
 			},
-			expectedError: "failed to create provider registry token: mock error",
+			expectedError: "failed to create container registry login: mock error",
 		},
 		{
 			name: "error on getting proxy secret",
@@ -623,7 +623,7 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "cached-oidc-token-access-token"},
 		},
 		{
-			name: "cached registry token from OIDC token access token",
+			name: "cached container registry login from OIDC token access token",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
 					key:   "487b74bf3fbb44da8b460231dd4c1a44986f2cd8f4764ff60b418a20b08eba39",
@@ -640,7 +640,7 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "cached-oidc-token-registry-token"},
 		},
 		{
-			name: "cached registry token from default",
+			name: "cached container registry login from default",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
 					key:   "893e00a7e91f9bf03343e8ab9139fdc9077f5c8f4be6c1bcfc0871ad2d2f365c",
@@ -651,7 +651,7 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "cached-registry-default-token"},
 		},
 		{
-			name: "cached registry token from service account",
+			name: "cached container registry login from service account",
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
 					key:   "4dc5e47d7de12f1a4badbfd6794ed5be4ca730cf2c755283abcedc0ef2736308",
@@ -719,26 +719,26 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "oidc-token-access-token"},
 		},
 		{
-			name: "registry token from default",
+			name: "container registry login from default",
 			provider: mockProvider{
 				defaultToken:             &mockToken{value: "default-access-token"},
-				registryToken:            &bifröst.ContainerRegistryToken{Username: "registry-default-token"},
-				registryTokenAccessToken: &mockToken{value: "default-access-token"},
+				registryLogin:            &bifröst.ContainerRegistryLogin{Username: "registry-default-token"},
+				registryLoginAccessToken: &mockToken{value: "default-access-token"},
 			},
 			opts: []bifröst.Option{
 				bifröst.WithContainerRegistry("test-registry"),
 			},
-			expectedToken: &bifröst.ContainerRegistryToken{Username: "registry-default-token"},
+			expectedToken: &bifröst.ContainerRegistryLogin{Username: "registry-default-token"},
 		},
 		{
-			name: "registry token from service account",
+			name: "container registry login from service account",
 			provider: mockProvider{
 				audience:                 "provider-audience",
 				tokenAudience:            "provider-audience",
 				tokenOIDCClient:          oidcClient,
 				token:                    &mockToken{value: "service-account-access-token"},
-				registryToken:            &bifröst.ContainerRegistryToken{Username: "registry-token"},
-				registryTokenAccessToken: &mockToken{value: "service-account-access-token"},
+				registryLogin:            &bifröst.ContainerRegistryLogin{Username: "registry-token"},
+				registryLoginAccessToken: &mockToken{value: "service-account-access-token"},
 			},
 			opts: []bifröst.Option{
 				bifröst.WithServiceAccount(client.ObjectKey{
@@ -747,17 +747,17 @@ func TestGetToken(t *testing.T) {
 				}, kubeClient),
 				bifröst.WithContainerRegistry("test-registry"),
 			},
-			expectedToken: &bifröst.ContainerRegistryToken{Username: "registry-token"},
+			expectedToken: &bifröst.ContainerRegistryLogin{Username: "registry-token"},
 		},
 		{
-			name: "registry token from OIDC token access token",
+			name: "container registry login from OIDC token access token",
 			provider: mockProvider{
 				audience:                 "provider-audience",
 				tokenAudience:            "provider-audience",
 				tokenOIDCClient:          oidcClient,
 				token:                    &mockToken{value: "registry-oidc-token-access-token"},
-				registryToken:            &bifröst.ContainerRegistryToken{Username: "registry-oidc-token-access-token"},
-				registryTokenAccessToken: &mockToken{value: "registry-oidc-token-access-token"},
+				registryLogin:            &bifröst.ContainerRegistryLogin{Username: "registry-oidc-token-access-token"},
+				registryLoginAccessToken: &mockToken{value: "registry-oidc-token-access-token"},
 			},
 			opts: []bifröst.Option{
 				bifröst.WithServiceAccount(client.ObjectKey{
@@ -775,7 +775,7 @@ func TestGetToken(t *testing.T) {
 				}),
 				bifröst.WithContainerRegistry("test-registry"),
 			},
-			expectedToken: &bifröst.ContainerRegistryToken{Username: "registry-oidc-token-access-token"},
+			expectedToken: &bifröst.ContainerRegistryLogin{Username: "registry-oidc-token-access-token"},
 		},
 		{
 			name: "audience from options has precedence over all other sources",
@@ -925,9 +925,9 @@ type mockProvider struct {
 	tokenProxyURL            string
 	tokenOIDCClient          *http.Client
 	tokenExpectDirectAccess  bool
-	registryToken            *bifröst.ContainerRegistryToken
-	registryTokenErr         bool
-	registryTokenAccessToken bifröst.Token
+	registryLogin            *bifröst.ContainerRegistryLogin
+	registryLoginErr         bool
+	registryLoginAccessToken bifröst.Token
 	oidcToken                string
 	oidcTokenErr             bool
 	oidcTokenAccessToken     bifröst.Token
@@ -1022,18 +1022,18 @@ func (m *mockProvider) NewAccessToken(ctx context.Context, oidcToken string,
 	return m.token, getError(m.tokenErr)
 }
 
-func (m *mockProvider) NewRegistryToken(ctx context.Context, containerRegistry string,
-	accessToken bifröst.Token, opts ...bifröst.Option) (*bifröst.ContainerRegistryToken, error) {
+func (m *mockProvider) NewRegistryLogin(ctx context.Context, containerRegistry string,
+	accessToken bifröst.Token, opts ...bifröst.Option) (*bifröst.ContainerRegistryLogin, error) {
 
 	// Check access token.
-	if m.registryTokenAccessToken != nil {
-		if accessToken.(*mockToken).value != m.registryTokenAccessToken.(*mockToken).value {
+	if m.registryLoginAccessToken != nil {
+		if accessToken.(*mockToken).value != m.registryLoginAccessToken.(*mockToken).value {
 			return nil, fmt.Errorf("expected access token %q, got %q",
-				m.registryTokenAccessToken.(*mockToken).value, accessToken.(*mockToken).value)
+				m.registryLoginAccessToken.(*mockToken).value, accessToken.(*mockToken).value)
 		}
 	}
 
-	return m.registryToken, getError(m.registryTokenErr)
+	return m.registryLogin, getError(m.registryLoginErr)
 }
 
 func (m *mockProvider) NewOIDCToken(ctx context.Context, accessToken bifröst.Token,

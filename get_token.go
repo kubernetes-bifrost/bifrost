@@ -46,7 +46,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 	newAccessToken := func() (Token, error) {
 		token, err := provider.NewDefaultAccessToken(ctx, opts...)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create provider default access token: %w", err)
+			return nil, fmt.Errorf("failed to create default access token: %w", err)
 		}
 		return token, nil
 	}
@@ -141,7 +141,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 
 			token, err := provider.NewAccessToken(ctx, oidcToken, serviceAccount, opts...)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create provider access token: %w", err)
+				return nil, fmt.Errorf("failed to create access token: %w", err)
 			}
 
 			return token, nil
@@ -157,9 +157,9 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 				return nil, err
 			}
 
-			token, err := provider.NewRegistryToken(ctx, o.ContainerRegistry, accessToken, opts...)
+			token, err := provider.NewRegistryLogin(ctx, o.ContainerRegistry, accessToken, opts...)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create provider registry token: %w", err)
+				return nil, fmt.Errorf("failed to create container registry login: %w", err)
 			}
 
 			return token, nil

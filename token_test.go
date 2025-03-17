@@ -34,7 +34,7 @@ import (
 func TestContainerRegistryToken_GetDuration(t *testing.T) {
 	g := NewWithT(t)
 
-	token := &bifröst.ContainerRegistryToken{
+	token := &bifröst.ContainerRegistryLogin{
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 

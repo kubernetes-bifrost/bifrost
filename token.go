@@ -30,14 +30,14 @@ type Token interface {
 	GetDuration() time.Duration
 }
 
-// ContainerRegistryToken represents a temporary access token for a container registry.
-type ContainerRegistryToken struct {
+// ContainerRegistryLogin represents temporary login credentials for a container registry.
+type ContainerRegistryLogin struct {
 	Username  string
 	Password  string
 	ExpiresAt time.Time
 }
 
-// GetDuration returns the duration for which the token is valid.
-func (c *ContainerRegistryToken) GetDuration() time.Duration {
+// GetDuration implements the Token interface.
+func (c *ContainerRegistryLogin) GetDuration() time.Duration {
 	return time.Until(c.ExpiresAt)
 }
