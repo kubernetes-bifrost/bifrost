@@ -20,4 +20,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// server implements a gRPC+REST server (using gRPC Gateway) for serving
+// temporary tokens to applications inside Kubernetes clusters as a
+// DaemonSet. The applications are identified on requests by their
+// IP address, which has to match the IP address of a pod running
+// on the same node as the server, or match the node CIDR for pods
+// running on the host network. The pod/node service account is then
+// used to issue an access token or registry login credentials, which
+// are then handed to the application.
 package server
