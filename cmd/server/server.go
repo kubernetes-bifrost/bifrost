@@ -21,11 +21,16 @@
 // SOFTWARE.
 
 // server implements a gRPC+REST server (using gRPC Gateway) for serving
-// temporary tokens to applications inside Kubernetes clusters as a
-// DaemonSet. The applications are identified on requests by their
-// IP address, which has to match the IP address of a pod running
-// on the same node as the server, or match the node CIDR for pods
-// running on the host network. The pod/node service account is then
-// used to issue an access token or registry login credentials, which
-// are then handed to the application.
+// temporary credentials to applications inside Kubernetes clusters.
+//
+// An application is identified on requests to the server by its IP address,
+// which has to match the IP address of a pod running on the same node as
+// the server, or for pods running on the host network match the CIDR of
+// the node the server is running on. The pod/node service account is then
+// used to issue access tokens or container registry login credentials,
+// which are then handed to the application.
+//
+// The server must be deployed as a DaemonSet and use a Service with
+// spec.internalTrafficPolicy set to Local to direct traffic to the
+// server only from pods running on the same node.
 package server
