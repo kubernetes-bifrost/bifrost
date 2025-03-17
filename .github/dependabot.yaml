@@ -35,6 +35,15 @@ updates:
       patterns:
       - "*"
 - package-ecosystem: gomod
+  directory: /cmd
+  open-pull-requests-limit: 1
+  schedule:
+    interval: weekly
+  groups:
+    cmd:
+      patterns:
+      - "*"
+- package-ecosystem: gomod
   directory: /providers/aws
   open-pull-requests-limit: 1
   schedule:
