@@ -20,25 +20,30 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package envtest
+package testenv
 
 import (
-	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
+	"testing"
 
 	"github.com/Masterminds/semver/v3"
+	. "github.com/onsi/gomega"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 var regex = regexp.MustCompile(`^(\d+\.\d+\.\d+)-.*$`)
 
-// SelectLatest returns the latest version of the k8s binaries in the given directory.
-func SelectLatest(binDir string) (string, error) {
+func New(t *testing.T, binDir string) *rest.Config {
+	t.Helper()
+
+	g := NewWithT(t)
+
 	entries, err := os.ReadDir(binDir)
-	if err != nil {
-		return "", fmt.Errorf("failed to read directory %s: %w", binDir, err)
-	}
+	g.Expect(err).NotTo(HaveOccurred())
 
 	var semvers semver.Collection
 	m := make(map[string]string)
@@ -52,18 +57,26 @@ func SelectLatest(binDir string) (string, error) {
 		}
 		raw := s[1]
 		semver, err := semver.NewVersion(raw)
-		if err != nil {
-			return "", fmt.Errorf("failed to parse semver %s: %w", raw, err)
-		}
+		g.Expect(err).NotTo(HaveOccurred())
 		semvers = append(semvers, semver)
 		m[raw] = entry.Name()
 	}
 
-	if len(semvers) == 0 {
-		return "", fmt.Errorf("no k8s binaries found in %s", binDir)
-	}
+	g.Expect(len(semvers)).NotTo(BeZero())
 
 	sort.Sort(sort.Reverse(semvers))
+	dir := m[semvers[0].Original()]
 
-	return m[semvers[0].Original()], nil
+	os.Unsetenv("KUBEBUILDER_ASSETS")
+
+	testEnv := &envtest.Environment{
+		BinaryAssetsDirectory: filepath.Join(binDir, dir),
+	}
+
+	conf, err := testEnv.Start()
+	g.Expect(err).NotTo(HaveOccurred())
+
+	t.Cleanup(func() { testEnv.Stop() })
+
+	return conf
 }

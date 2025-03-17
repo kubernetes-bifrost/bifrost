@@ -20,24 +20,26 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-SHELL := /bin/bash
+name: Pull Request
 
-.PHONY: all
-all: tidy test
+on:
+  pull_request:
+    branches: [main]
+    paths:
+    - '*.go'
+    - Makefile
+    - testing/**
+    - .github/**
 
-.PHONY: tidy
-tidy:
-	go mod tidy
-	go fmt ./...
-	./hack/license.sh
-
-.PHONY: test
-test: bin/setup-envtest
-	go test -v ./...
-
-bin:
-	mkdir -p bin/
-
-bin/setup-envtest: bin
-	GOBIN=$(shell pwd)/bin/ go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-	./bin/setup-envtest use --bin-dir ./bin
+jobs:
+  pull-request:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - run: make
+    - name: Check for changes
+      run: |
+        if ! git --no-pager diff --exit-code; then
+          git status
+          exit 1
+        fi

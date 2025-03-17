@@ -42,9 +42,9 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
+	"github.com/kubernetes-bifrost/bifrost/testing/testenv"
 )
 
 func TestGetToken(t *testing.T) {
@@ -52,14 +52,8 @@ func TestGetToken(t *testing.T) {
 
 	g := NewWithT(t)
 
-	testEnv := &envtest.Environment{}
-
-	conf, err := testEnv.Start()
-	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(conf).NotTo(BeNil())
-
-	defer testEnv.Stop()
-
+	// Setup envtest.
+	conf := testenv.New(t, "./bin/k8s")
 	kubeClient, err := client.New(conf, client.Options{})
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(kubeClient).NotTo(BeNil())
