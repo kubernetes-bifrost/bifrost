@@ -6,9 +6,9 @@ require (
 	github.com/coreos/go-oidc/v3 v3.13.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/onsi/gomega v1.36.2
-	k8s.io/api v0.32.1
-	k8s.io/apimachinery v0.32.1
-	k8s.io/client-go v0.32.1
+	k8s.io/api v0.32.3
+	k8s.io/apimachinery v0.32.3
+	k8s.io/client-go v0.32.3
 	sigs.k8s.io/controller-runtime v0.20.3
 )
 
