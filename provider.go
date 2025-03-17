@@ -44,13 +44,13 @@ type Provider interface {
 	// metadata services, etc.
 	NewDefaultAccessToken(ctx context.Context, opts ...Option) (Token, error)
 
-	// GetAudience returns the audience OIDC tokens issued for creating access
+	// GetAudience returns the audience identity tokens issued for creating access
 	// tokens for the provider should have.
 	GetAudience(ctx context.Context) (string, error)
 
-	// NewAccessToken takes a service account and its OIDC token and returns a token
+	// NewAccessToken takes a service account and an identity token and returns a token
 	// that can be used to authenticate with the cloud provider.
-	NewAccessToken(ctx context.Context, oidcToken string,
+	NewAccessToken(ctx context.Context, identityToken string,
 		serviceAccount *corev1.ServiceAccount, opts ...Option) (Token, error)
 
 	// NewRegistryLogin takes a container registry host and a Token created with
@@ -60,14 +60,14 @@ type Provider interface {
 		accessToken Token, opts ...Option) (*ContainerRegistryLogin, error)
 }
 
-// OIDCProvider extends Provider with a method for creating OIDC tokens.
-type OIDCProvider interface {
+// IdentityProvider extends Provider with a method for creating identity tokens.
+type IdentityProvider interface {
 	Provider
 
-	// NewOIDCToken takes an access token, an identity to be impesonated and
-	// an audience and returns an OIDC token that attests to the identity and
-	// targets the audience.
-	NewOIDCToken(ctx context.Context, accessToken Token,
+	// NewIdentityToken takes an access token, an identity to be impesonated and
+	// an audience and returns an identity token that attests to the identity
+	// and targets the audience.
+	NewIdentityToken(ctx context.Context, accessToken Token,
 		serviceAccount *corev1.ServiceAccount,
 		audience string, opts ...Option) (string, error)
 }

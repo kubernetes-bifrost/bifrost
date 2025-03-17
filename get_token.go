@@ -54,7 +54,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 	// Initialize service account token fetcher if service account is specified.
 	var serviceAccount *corev1.ServiceAccount
 	var providerAudience, identityProviderAudience string
-	var identityProvider OIDCProvider
+	var identityProvider IdentityProvider
 	var proxyURL *url.URL
 	if o.serviceAccountRef != nil {
 		// Get service account and prepare a function to create a token for it.
@@ -84,13 +84,13 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 			}
 		}
 
-		// Initialize a function for creating the OIDC token that will be exchanged
+		// Initialize a function for creating the identity token that will be exchanged
 		// for the final cloud provider access token. Initially, this function will
 		// create token for the configured service account audience.
-		newOIDCToken := func() (string, error) { return newServiceAccountToken(providerAudience) }
+		newIdentityToken := func() (string, error) { return newServiceAccountToken(providerAudience) }
 
 		// If an intermediary identity provider is configured, update the function
-		// for creating the OIDC token to use the identity provider.
+		// for creating the identity token to use the identity provider.
 		if o.identityProvider != nil {
 			identityProvider = o.identityProvider
 
@@ -100,7 +100,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 				return nil, fmt.Errorf("failed to get identity provider audience: %w", err)
 			}
 
-			newOIDCToken = func() (string, error) {
+			newIdentityToken = func() (string, error) {
 				saToken, err := newServiceAccountToken(identityProviderAudience)
 				if err != nil {
 					return "", err
@@ -123,23 +123,23 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 					return "", fmt.Errorf("failed to create identity provider access token: %w", err)
 				}
 
-				oidcToken, err := identityProvider.NewOIDCToken(ctx,
+				identityToken, err := identityProvider.NewIdentityToken(ctx,
 					accessToken, serviceAccount, providerAudience, opts...)
 				if err != nil {
-					return "", fmt.Errorf("failed to create identity provider OIDC token: %w", err)
+					return "", fmt.Errorf("failed to create identity token: %w", err)
 				}
 
-				return oidcToken, nil
+				return identityToken, nil
 			}
 		}
 
 		newAccessToken = func() (Token, error) {
-			oidcToken, err := newOIDCToken()
+			identityToken, err := newIdentityToken()
 			if err != nil {
 				return nil, err
 			}
 
-			token, err := provider.NewAccessToken(ctx, oidcToken, serviceAccount, opts...)
+			token, err := provider.NewAccessToken(ctx, identityToken, serviceAccount, opts...)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create access token: %w", err)
 			}

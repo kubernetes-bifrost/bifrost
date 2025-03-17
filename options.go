@@ -43,7 +43,7 @@ type Options struct {
 	client            Client
 	serviceAccountRef *client.ObjectKey
 	audience          string
-	identityProvider  OIDCProvider
+	identityProvider  IdentityProvider
 }
 
 // Option is a functional option for getting a token.
@@ -77,7 +77,7 @@ func WithAudience(audience string) Option {
 	}
 }
 
-// WithIdentityProvider sets the OIDC provider for issuing an identity token.
+// WithIdentityProvider sets an identity provider for issuing an identity token.
 // Requires a service account to be set. This identity token is used to
 // issue the final cloud provider access token, replacing the service account
 // token. The service account token is then used to issue this identity token
@@ -90,7 +90,7 @@ func WithAudience(audience string) Option {
 //
 // This kind of intermediary impersonation is needed for clusters whose issuer
 // URL cannot be accessed publicly and cannot be changed, e.g. GKE clusters.
-func WithIdentityProvider(provider OIDCProvider) Option {
+func WithIdentityProvider(provider IdentityProvider) Option {
 	return func(o *Options) {
 		o.identityProvider = provider
 	}
