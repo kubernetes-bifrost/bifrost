@@ -2,9 +2,8 @@
 
 <img src="./docs/img/logo.jpg" alt="Bifröst" width="300" height="300" />
 
-Bifröst helps you federate your service accounts to get secret-less
-access on cloud providers by leveraging the Kubernetes built-in
-OpenID Connect (OIDC) service account token issuer.
+Bifröst helps you get secret-less access on cloud providers by leveraging the
+Kubernetes built-in OpenID Connect (OIDC) token issuer for service accounts.
 
 The project has two main goals:
 
