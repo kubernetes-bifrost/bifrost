@@ -29,15 +29,25 @@ all: tidy test
 tidy:
 	go mod tidy
 	go fmt ./...
+	cd cmd; go mod tidy
+	cd cmd; go fmt ./...
+	cd providers/aws; go mod tidy
+	cd providers/aws; go fmt ./...
+	cd providers/azure; go mod tidy
+	cd providers/azure; go fmt ./...
+	cd providers/gcp; go mod tidy
+	cd providers/gcp; go fmt ./...
 	./hack/license.sh
 
 .PHONY: test
 test: bin/setup-envtest
 	go test -v ./...
-
-bin:
-	mkdir -p bin/
+	cd cmd; go test -v ./...
+	cd providers/gcp; go test -v ./...
 
 bin/setup-envtest: bin
 	GOBIN=$(shell pwd)/bin/ go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 	./bin/setup-envtest use --bin-dir ./bin
+
+bin:
+	mkdir -p bin/
