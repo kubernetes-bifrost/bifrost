@@ -62,17 +62,6 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 		if err := o.client.Get(ctx, *o.serviceAccountRef, serviceAccount); err != nil {
 			return nil, fmt.Errorf("failed to get service account: %w", err)
 		}
-		newServiceAccountToken := func(audience string) (string, error) {
-			tokenReq := &authnv1.TokenRequest{
-				Spec: authnv1.TokenRequestSpec{
-					Audiences: []string{audience},
-				},
-			}
-			if err := o.client.SubResource("token").Create(ctx, serviceAccount, tokenReq); err != nil {
-				return "", fmt.Errorf("failed to create kubernetes service account token: %w", err)
-			}
-			return tokenReq.Status.Token, nil
-		}
 
 		// Get provider audience.
 		providerAudience = o.GetAudience(serviceAccount)
@@ -87,7 +76,9 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 		// Initialize a function for creating the identity token that will be exchanged
 		// for the final cloud provider access token. Initially, this function will
 		// create token for the configured service account audience.
-		newIdentityToken := func() (string, error) { return newServiceAccountToken(providerAudience) }
+		newIdentityToken := func() (string, error) {
+			return newServiceAccountToken(ctx, o.client, serviceAccount, providerAudience)
+		}
 
 		// If an intermediary identity provider is configured, update the function
 		// for creating the identity token to use the identity provider.
@@ -101,38 +92,12 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 			}
 
 			newIdentityToken = func() (string, error) {
-				saToken, err := newServiceAccountToken(identityProviderAudience)
-				if err != nil {
-					return "", err
-				}
-
-				var opts []Option
-				if proxyURL != nil {
-					opts = append(opts, WithProxyURL(*proxyURL))
-				}
-				if len(o.ProviderOptions) > 0 {
-					opts = append(opts, WithProviderOptions(o.ProviderOptions...))
-				}
-				if len(o.Defaults.ProviderOptions) > 0 {
-					opts = append(opts, WithDefaults(WithProviderOptions(o.Defaults.ProviderOptions...)))
-				}
-
-				accessToken, err := identityProvider.NewAccessToken(ctx,
-					saToken, serviceAccount, append(opts, WithPreferDirectAccess())...)
-				if err != nil {
-					return "", fmt.Errorf("failed to create identity provider access token: %w", err)
-				}
-
-				identityToken, err := identityProvider.NewIdentityToken(ctx,
-					accessToken, serviceAccount, providerAudience, opts...)
-				if err != nil {
-					return "", fmt.Errorf("failed to create identity token: %w", err)
-				}
-
-				return identityToken, nil
+				return newIdentityTokenFromProvider(ctx, identityProvider, o.client, serviceAccount,
+					providerAudience, identityProviderAudience, proxyURL, &o)
 			}
 		}
 
+		// Initialize access token fetcher that will use the identity token.
 		newAccessToken = func() (Token, error) {
 			identityToken, err := newIdentityToken()
 			if err != nil {
@@ -191,15 +156,71 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 	return o.cache.GetOrSet(cacheKey, newToken)
 }
 
-func getProxyURL(ctx context.Context, serviceAccount *corev1.ServiceAccount, o *Options) (*url.URL, error) {
-	urlFromClient := func(hc *http.Client) *url.URL {
-		if hc == nil {
-			return nil
-		}
+func newServiceAccountToken(ctx context.Context, client Client,
+	serviceAccount *corev1.ServiceAccount, audience string) (string, error) {
 
-		proxyURL, _ := hc.Transport.(*http.Transport).Proxy(nil)
-		return proxyURL
+	tokenReq := &authnv1.TokenRequest{
+		Spec: authnv1.TokenRequestSpec{
+			Audiences: []string{audience},
+		},
 	}
+
+	if err := client.SubResource("token").Create(ctx, serviceAccount, tokenReq); err != nil {
+		return "", fmt.Errorf("failed to create kubernetes service account token: %w", err)
+	}
+
+	return tokenReq.Status.Token, nil
+}
+
+func newIdentityTokenFromProvider(ctx context.Context, identityProvider IdentityProvider,
+	client Client, serviceAccount *corev1.ServiceAccount, providerAudience, identityProviderAudience string,
+	proxyURL *url.URL, o *Options) (string, error) {
+
+	// Create service account token.
+	saToken, err := newServiceAccountToken(ctx, client, serviceAccount, identityProviderAudience)
+	if err != nil {
+		return "", err
+	}
+
+	// Build options.
+	var opts []Option
+	if proxyURL != nil {
+		opts = append(opts, WithProxyURL(*proxyURL))
+	}
+	if len(o.ProviderOptions) > 0 {
+		opts = append(opts, WithProviderOptions(o.ProviderOptions...))
+	}
+	if len(o.Defaults.ProviderOptions) > 0 {
+		opts = append(opts, WithDefaults(WithProviderOptions(o.Defaults.ProviderOptions...)))
+	}
+
+	// Create access token.
+	accessToken, err := identityProvider.NewAccessToken(ctx,
+		saToken, serviceAccount, append(opts, WithPreferDirectAccess())...)
+	if err != nil {
+		return "", fmt.Errorf("failed to create identity provider access token: %w", err)
+	}
+
+	// Create identity token.
+	identityToken, err := identityProvider.NewIdentityToken(ctx,
+		accessToken, serviceAccount, providerAudience, opts...)
+	if err != nil {
+		return "", fmt.Errorf("failed to create identity token: %w", err)
+	}
+
+	return identityToken, nil
+}
+
+func urlFromClient(hc *http.Client) *url.URL {
+	if hc == nil {
+		return nil
+	}
+
+	proxyURL, _ := hc.Transport.(*http.Transport).Proxy(nil)
+	return proxyURL
+}
+
+func getProxyURL(ctx context.Context, serviceAccount *corev1.ServiceAccount, o *Options) (*url.URL, error) {
 
 	// o.HTTPClient takes precedence over everything else
 	if hc := o.HTTPClient; hc != nil {
@@ -250,19 +271,21 @@ func getProxyURL(ctx context.Context, serviceAccount *corev1.ServiceAccount, o *
 func buildCacheKey(provider, identityProvider Provider, serviceAccount *corev1.ServiceAccount,
 	providerAudience, identityProviderAudience string, proxyURL *url.URL, opts ...Option) (string, error) {
 
+	// Add provider key parts.
 	providerKey, err := provider.BuildCacheKey(serviceAccount, opts...)
 	if err != nil {
 		return "", fmt.Errorf("failed to build provider cache key: %w", err)
 	}
-
 	keyParts := []string{
 		fmt.Sprintf("provider=%s", provider.GetName()),
 		fmt.Sprintf("providerKey={%s}", providerKey),
 	}
 
+	// Add service account key parts.
 	if serviceAccount != nil {
 		keyParts = append(keyParts, fmt.Sprintf("providerAudience=%s", providerAudience))
 
+		// Add identity provider key parts.
 		if identityProvider != nil {
 			identityProviderKey, err := identityProvider.BuildCacheKey(serviceAccount, opts...)
 			if err != nil {
@@ -275,11 +298,13 @@ func buildCacheKey(provider, identityProvider Provider, serviceAccount *corev1.S
 				fmt.Sprintf("identityProviderAudience=%s", identityProviderAudience))
 		}
 
+		// Add service account reference.
 		keyParts = append(keyParts,
 			fmt.Sprintf("serviceAccountName=%s", serviceAccount.Name),
 			fmt.Sprintf("serviceAccountNamespace=%s", serviceAccount.Namespace))
 	}
 
+	// Add proxy URL.
 	if proxyURL != nil {
 		keyParts = append(keyParts, fmt.Sprintf("proxyURL=%s", proxyURL))
 	}
