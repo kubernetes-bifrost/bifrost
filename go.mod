@@ -3,6 +3,7 @@ module github.com/kubernetes-bifrost/bifrost
 go 1.24.1
 
 require (
+	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/coreos/go-oidc/v3 v3.13.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/onsi/gomega v1.36.2
