@@ -2,6 +2,8 @@ module github.com/kubernetes-bifrost/bifrost/providers/gcp
 
 go 1.24.1
 
+replace github.com/kubernetes-bifrost/bifrost => ../..
+
 require (
 	cloud.google.com/go/compute/metadata v0.6.0
 	github.com/kubernetes-bifrost/bifrost v0.6.0

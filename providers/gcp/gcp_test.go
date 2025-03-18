@@ -26,6 +26,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -34,6 +35,8 @@ import (
 	. "github.com/onsi/gomega"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google/externalaccount"
+	"google.golang.org/api/impersonate"
+	"google.golang.org/api/option"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -193,32 +196,51 @@ func TestProvider_BuildCacheKey(t *testing.T) {
 	}
 }
 
-func TestProvider_NewRegistryLogin(t *testing.T) {
-	g := NewWithT(t)
-
-	registryLogin, err := gcp.Provider{}.NewRegistryLogin(context.Background(), "gcp.io", &gcp.Token{oauth2.Token{
-		AccessToken: "some-access-token",
-		Expiry:      time.Now().Add(time.Hour),
-	}})
-	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(registryLogin).NotTo(BeNil())
-	g.Expect(registryLogin.Username).To(Equal("oauth2accesstoken"))
-	g.Expect(registryLogin.Password).To(Equal("some-access-token"))
-	g.Expect(registryLogin.GetDuration()).To(BeNumerically("~", time.Hour, time.Second))
-}
-
-func TestTokenSupplier_SubjectToken(t *testing.T) {
-	for _, tt := range []string{
-		"some-token",
-		"another-token",
+func TestProvider_NewDefaultAccessToken(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		opts          []bifröst.Option
+		expectedToken bifröst.Token
+		expectedErr   string
+	}{
+		{
+			name: "error on getting token source",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{sourceErr: true})),
+			},
+			expectedErr: "mock error",
+		},
+		{
+			name: "error on getting token",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{token: nil})),
+			},
+			expectedErr: "mock error",
+		},
+		{
+			name: "success",
+			opts: []bifröst.Option{
+				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
+				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{
+					token:            &oauth2.Token{AccessToken: "some-access-token"},
+					expectedProxyURL: "http://proxy-bifrost",
+				})),
+			},
+			expectedToken: &gcp.Token{oauth2.Token{AccessToken: "some-access-token"}},
+		},
 	} {
-		t.Run(tt, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			tokenSupplier := gcp.TokenSupplier(tt)
-			token, err := tokenSupplier.SubjectToken(context.Background(), externalaccount.SupplierOptions{})
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(token).To(Equal(tt))
+			token, err := gcp.Provider{}.NewDefaultAccessToken(context.Background(), tt.opts...)
+
+			if tt.expectedErr != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.expectedErr))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(token).To(Equal(tt.expectedToken))
+			}
 		})
 	}
 }
@@ -265,6 +287,191 @@ func TestProvider_GetAudience(t *testing.T) {
 			} else {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(audience).To(Equal(tt.expectedAudience))
+			}
+		})
+	}
+}
+
+func TestProvider_NewAccessToken(t *testing.T) {
+	for _, tt := range []struct {
+		name           string
+		identityToken  string
+		opts           []bifröst.Option
+		gkeMetadataErr bool
+		expectedToken  bifröst.Token
+		expectedErr    string
+	}{
+		{
+			name: "error on getting audience from gke metadata",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{})),
+			},
+			gkeMetadataErr: true,
+			expectedErr:    "failed to get GKE cluster project ID from the metadata service: metadata",
+		},
+		{
+			name: "error due to invalid service account email",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(
+					gcp.WithImplementation(&mockImpl{}),
+					gcp.WithServiceAccountEmail("invalid-email")),
+			},
+			expectedErr: "invalid GCP service account email: 'invalid-email'",
+		},
+		{
+			name: "error on new token source",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{sourceErr: true})),
+			},
+			expectedErr: "mock error",
+		},
+		{
+			name: "error on new token from source",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{})),
+			},
+			expectedErr: "mock error",
+		},
+		{
+			name:          "success",
+			identityToken: "some-identity-token",
+			opts: []bifröst.Option{
+				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
+				bifröst.WithProviderOptions(
+					gcp.WithServiceAccountEmail("nat@project-id.iam.gserviceaccount.com"),
+					gcp.WithImplementation(&mockImpl{
+						t:                t,
+						token:            &oauth2.Token{AccessToken: "some-access-token"},
+						expectedProxyURL: "http://proxy-bifrost",
+						expectedExtConfig: &externalaccount.Config{
+							UniverseDomain:                 "googleapis.com",
+							Audience:                       "identitynamespace:nat-project-id.svc.id.goog:https://container.googleapis.com/v1/projects/nat-project-id/locations/nat-location/clusters/nat-name",
+							SubjectTokenType:               "urn:ietf:params:oauth:token-type:jwt",
+							TokenURL:                       "https://sts.googleapis.com/v1/token",
+							SubjectTokenSupplier:           gcp.TokenSupplier("some-identity-token"),
+							ServiceAccountImpersonationURL: "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/nat@project-id.iam.gserviceaccount.com:generateAccessToken",
+							Scopes: []string{
+								"https://www.googleapis.com/auth/cloud-platform",
+								"https://www.googleapis.com/auth/userinfo.email",
+							},
+						},
+					})),
+			},
+			expectedToken: &gcp.Token{oauth2.Token{AccessToken: "some-access-token"}},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			(&gkeMetadataServer{
+				projectID:    "nat-project-id",
+				location:     "nat-location",
+				name:         "nat-name",
+				projectIDErr: tt.gkeMetadataErr,
+				locationErr:  tt.gkeMetadataErr,
+				nameErr:      tt.gkeMetadataErr,
+			}).start(t)
+
+			token, err := gcp.Provider{}.NewAccessToken(context.Background(),
+				tt.identityToken, &corev1.ServiceAccount{}, tt.opts...)
+
+			if tt.expectedErr != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.expectedErr))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(token).To(Equal(tt.expectedToken))
+			}
+		})
+	}
+}
+
+func TestProvider_NewRegistryLogin(t *testing.T) {
+	g := NewWithT(t)
+
+	registryLogin, err := gcp.Provider{}.NewRegistryLogin(context.Background(), "gcp.io", &gcp.Token{oauth2.Token{
+		AccessToken: "some-access-token",
+		Expiry:      time.Now().Add(time.Hour),
+	}})
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(registryLogin).NotTo(BeNil())
+	g.Expect(registryLogin.Username).To(Equal("oauth2accesstoken"))
+	g.Expect(registryLogin.Password).To(Equal("some-access-token"))
+	g.Expect(registryLogin.GetDuration()).To(BeNumerically("~", time.Hour, time.Second))
+}
+
+func TestProvider_NewIdentityToken(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		accessToken   gcp.Token
+		audience      string
+		opts          []bifröst.Option
+		expectedToken string
+		expectedErr   string
+	}{
+		{
+			name: "error due to invalid service account email",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(gcp.WithServiceAccountEmail("invalid-email")),
+			},
+			expectedErr: "invalid GCP service account email: 'invalid-email'",
+		},
+		{
+			name:        "error due to service account email not set",
+			expectedErr: "GCP service account email is required for identity tokens",
+		},
+		{
+			name: "error on new id token source",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(
+					gcp.WithImplementation(&mockImpl{sourceErr: true}),
+					gcp.WithServiceAccountEmail("nit@project-id.iam.gserviceaccount.com")),
+			},
+			expectedErr: "mock error",
+		},
+		{
+			name: "error on new id token from source",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(
+					gcp.WithImplementation(&mockImpl{}),
+					gcp.WithServiceAccountEmail("nit@project-id.iam.gserviceaccount.com")),
+			},
+			expectedErr: "mock error",
+		},
+		{
+			name:        "success",
+			accessToken: gcp.Token{oauth2.Token{AccessToken: "some-access-token"}},
+			audience:    "some-audience",
+			opts: []bifröst.Option{
+				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
+				bifröst.WithProviderOptions(
+					gcp.WithServiceAccountEmail("nit@project-id.iam.gserviceaccount.com"),
+					gcp.WithImplementation(&mockImpl{
+						t:                t,
+						token:            &oauth2.Token{AccessToken: "some-id-token"},
+						expectedProxyURL: "http://proxy-bifrost",
+						expectedImpConfig: &impersonate.IDTokenConfig{
+							Audience:        "some-audience",
+							TargetPrincipal: "nit@project-id.iam.gserviceaccount.com",
+							IncludeEmail:    true,
+						},
+					})),
+			},
+			expectedToken: "some-id-token",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			token, err := gcp.Provider{}.NewIdentityToken(context.Background(),
+				&tt.accessToken, &corev1.ServiceAccount{}, tt.audience, tt.opts...)
+
+			if tt.expectedErr != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.expectedErr))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(token).To(Equal(tt.expectedToken))
 			}
 		})
 	}
@@ -408,6 +615,22 @@ func TestGKEMetadata_WorkloadIdentityProvider(t *testing.T) {
 	}
 }
 
+func TestTokenSupplier_SubjectToken(t *testing.T) {
+	for _, tt := range []string{
+		"some-token",
+		"another-token",
+	} {
+		t.Run(tt, func(t *testing.T) {
+			g := NewWithT(t)
+
+			tokenSupplier := gcp.TokenSupplier(tt)
+			token, err := tokenSupplier.SubjectToken(context.Background(), externalaccount.SupplierOptions{})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(token).To(Equal(tt))
+		})
+	}
+}
+
 type gkeMetadataServer struct {
 	projectID    string
 	location     string
@@ -451,4 +674,103 @@ func (g *gkeMetadataServer) start(t *testing.T) {
 			os.Setenv("GCE_METADATA_HOST", gceMetadataHostBackup)
 		}
 	})
+}
+
+type mockImpl struct {
+	t                 *testing.T
+	token             *oauth2.Token
+	sourceErr         bool
+	gkeMetadata       gcp.GKEMetadata
+	expectedProxyURL  string
+	expectedExtConfig *externalaccount.Config
+	expectedImpConfig *impersonate.IDTokenConfig
+}
+
+type mockTokenSource struct {
+	token *oauth2.Token
+}
+
+func (m *mockImpl) NewDefaultAccessTokenSource(ctx context.Context, scopes ...string) (oauth2.TokenSource, error) {
+	if err := checkProxyURL(ctx, m.expectedProxyURL); err != nil {
+		return nil, err
+	}
+	if len(scopes) > 0 {
+		return nil, fmt.Errorf("unexpected scopes")
+	}
+	return &mockTokenSource{m.token}, getError(m.sourceErr)
+}
+
+func (m *mockImpl) NewAccessTokenSource(ctx context.Context, conf *externalaccount.Config) (oauth2.TokenSource, error) {
+	if err := checkProxyURL(ctx, m.expectedProxyURL); err != nil {
+		return nil, err
+	}
+	if m.expectedExtConfig != nil {
+		m.t.Helper()
+		g := NewWithT(m.t)
+		identityToken, err := conf.SubjectTokenSupplier.SubjectToken(ctx, externalaccount.SupplierOptions{})
+		g.Expect(err).NotTo(HaveOccurred())
+		expectedIdentityToken, err := m.expectedExtConfig.SubjectTokenSupplier.SubjectToken(ctx, externalaccount.SupplierOptions{})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(identityToken).To(Equal(expectedIdentityToken))
+		conf.SubjectTokenSupplier = nil
+		m.expectedExtConfig.SubjectTokenSupplier = nil
+		g.Expect(conf).To(Equal(m.expectedExtConfig))
+	}
+	return &mockTokenSource{m.token}, getError(m.sourceErr)
+}
+
+func (m *mockImpl) NewIDTokenSource(ctx context.Context, config *impersonate.IDTokenConfig, opts ...option.ClientOption) (oauth2.TokenSource, error) {
+	if err := checkProxyURL(ctx, m.expectedProxyURL); err != nil {
+		return nil, err
+	}
+	if m.expectedImpConfig != nil {
+		m.t.Helper()
+		g := NewWithT(m.t)
+		g.Expect(config).To(Equal(m.expectedImpConfig))
+	}
+	return &mockTokenSource{m.token}, getError(m.sourceErr)
+}
+
+func (m *mockImpl) GKEMetadata() *gcp.GKEMetadata {
+	return &m.gkeMetadata
+}
+
+func (m *mockTokenSource) Token() (*oauth2.Token, error) {
+	if m.token == nil {
+		return nil, getError(true)
+	}
+	return m.token, nil
+}
+
+func checkProxyURL(ctx context.Context, expected string) error {
+	v := ctx.Value(oauth2.HTTPClient)
+	if expected == "" {
+		if v != nil {
+			return fmt.Errorf("proxy not expected, but found")
+		}
+		return nil
+	}
+
+	hc, ok := v.(*http.Client)
+	if !ok {
+		return fmt.Errorf("unexpected HTTP client type: %T", v)
+	}
+
+	u, err := hc.Transport.(*http.Transport).Proxy(nil)
+	if err != nil {
+		return fmt.Errorf("failed to get proxy URL: %w", err)
+	}
+
+	if u.String() != expected {
+		return fmt.Errorf("unexpected proxy URL: want '%s', got '%s'", expected, u.String())
+	}
+
+	return nil
+}
+
+func getError(setError bool) error {
+	if setError {
+		return fmt.Errorf("mock error")
+	}
+	return nil
 }
