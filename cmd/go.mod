@@ -2,9 +2,14 @@ module github.com/kubernetes-bifrost/bifrost/cmd
 
 go 1.24.1
 
+replace (
+	github.com/kubernetes-bifrost/bifrost => ../
+	github.com/kubernetes-bifrost/bifrost/providers/gcp => ../providers/gcp
+)
+
 require (
-	github.com/kubernetes-bifrost/bifrost v0.6.0
-	github.com/kubernetes-bifrost/bifrost/providers/gcp v0.2.0
+	github.com/kubernetes-bifrost/bifrost v0.7.0
+	github.com/kubernetes-bifrost/bifrost/providers/gcp v0.3.0
 	github.com/spf13/cobra v1.9.1
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/client-go v0.32.3
