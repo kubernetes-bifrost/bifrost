@@ -20,6 +20,18 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// get implements commands for getting temporary access tokens or
-// container registry login credentials.
-package get
+package main
+
+// server implements a gRPC+REST server (using gRPC Gateway) for serving
+// temporary credentials to applications inside Kubernetes clusters.
+//
+// An application is identified on requests to the server by its IP address,
+// which has to match the IP address of a pod running on the same node as
+// the server, or for pods running on the host network match the CIDR of
+// the node the server is running on. The pod/node service account is then
+// used to issue access tokens or container registry login credentials,
+// which are then handed to the application.
+//
+// The server must be deployed as a DaemonSet and use a Service with
+// spec.internalTrafficPolicy set to Local to direct traffic to the
+// server only from pods running on the same node.

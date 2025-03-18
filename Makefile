@@ -23,7 +23,7 @@
 SHELL := /bin/bash
 
 .PHONY: all
-all: tidy test
+all: tidy test bin/bifrost
 
 .PHONY: tidy
 tidy:
@@ -51,3 +51,7 @@ bin/setup-envtest: bin
 
 bin:
 	mkdir -p bin/
+
+.PHONY: bin/bifrost
+bin/bifrost: bin
+	cd cmd; go build -o ../bin/bifrost
