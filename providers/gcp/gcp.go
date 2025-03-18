@@ -62,19 +62,9 @@ const (
 	ServiceAccountEmailPattern = `^[a-zA-Z0-9-]+@[a-zA-Z0-9-]+\.iam\.gserviceaccount\.com$`
 )
 
-var (
-	serviceAccountEmailRegex = regexp.MustCompile(ServiceAccountEmailPattern)
-
-	accessScopes = []string{
-		"https://www.googleapis.com/auth/cloud-platform",
-		"https://www.googleapis.com/auth/userinfo.email",
-	}
-
-	gkeMetadata GKEMetadata
-)
-
 type options struct {
 	serviceAccountEmail string
+	impl                implProvider
 }
 
 // WithServiceAccountEmail sets the service account email to impersonate.
@@ -127,14 +117,13 @@ func (Provider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...bif
 
 // NewDefaultAccessToken implements bifröst.Provider.
 func (Provider) NewDefaultAccessToken(ctx context.Context, opts ...bifröst.Option) (bifröst.Token, error) {
-	var o bifröst.Options
-	o.Apply(opts...)
+	o, impl := getOptions(opts...)
 
 	if hc := o.GetHTTPClient(); hc != nil {
 		ctx = context.WithValue(ctx, oauth2.HTTPClient, hc)
 	}
 
-	src, err := google.DefaultTokenSource(ctx)
+	src, err := impl.NewDefaultAccessTokenSource(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -152,27 +141,17 @@ func (Provider) GetAudience(ctx context.Context) (string, error) {
 	// in the options. When GCP Workload Identity Federation is being used,
 	// the audience must be set through options, so this method is only
 	// called when the cluster is necessarily a GKE cluster.
-	return gkeMetadata.WorkloadIdentityPool(ctx)
+	return impl{}.GKEMetadata().WorkloadIdentityPool(ctx)
 }
 
 // NewAccessToken implements bifröst.Provider.
 func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 	serviceAccount *corev1.ServiceAccount, opts ...bifröst.Option) (bifröst.Token, error) {
 
-	var o bifröst.Options
-	o.Apply(opts...)
+	o, impl := getOptions(opts...)
 
 	if hc := o.GetHTTPClient(); hc != nil {
 		ctx = context.WithValue(ctx, oauth2.HTTPClient, hc)
-	}
-
-	var email string
-	if !o.GetPreferDirectAccess() {
-		var err error
-		email, err = serviceAccountEmail(serviceAccount, &o)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	audience := o.GetAudience(serviceAccount)
@@ -180,19 +159,31 @@ func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 		// If the audience is not set, we assume the token is for GKE
 		// and we get the audience for GKE clusters.
 		var err error
-		audience, err = gkeMetadata.GetAudience(ctx)
+		audience, err = impl.GKEMetadata().GetAudience(ctx)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	conf := externalaccount.Config{
+	conf := &externalaccount.Config{
 		UniverseDomain:       "googleapis.com",
 		Audience:             audience,
 		SubjectTokenType:     "urn:ietf:params:oauth:token-type:jwt",
 		TokenURL:             "https://sts.googleapis.com/v1/token",
-		Scopes:               accessScopes,
 		SubjectTokenSupplier: TokenSupplier(identityToken),
+		Scopes: []string{
+			"https://www.googleapis.com/auth/cloud-platform",
+			"https://www.googleapis.com/auth/userinfo.email",
+		},
+	}
+
+	var email string
+	if !o.GetPreferDirectAccess() {
+		var err error
+		email, err = serviceAccountEmail(serviceAccount, o)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if email != "" { // impersonation
@@ -203,7 +194,7 @@ func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 		conf.TokenInfoURL = "https://sts.googleapis.com/v1/introspect"
 	}
 
-	src, err := externalaccount.NewTokenSource(ctx, conf)
+	src, err := impl.NewAccessTokenSource(ctx, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -233,20 +224,26 @@ func (Provider) NewIdentityToken(ctx context.Context, accessToken bifröst.Token
 	serviceAccount *corev1.ServiceAccount, audience string,
 	opts ...bifröst.Option) (string, error) {
 
-	var o bifröst.Options
-	o.Apply(opts...)
+	o, impl := getOptions(opts...)
 
-	email, err := serviceAccountEmail(serviceAccount, &o)
+	if hc := o.GetHTTPClient(); hc != nil {
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, hc)
+	}
+
+	email, err := serviceAccountEmail(serviceAccount, o)
 	if err != nil {
 		return "", err
 	}
+	if email == "" {
+		return "", fmt.Errorf("GCP service account email is required for identity tokens")
+	}
 
-	conf := impersonate.IDTokenConfig{
+	conf := &impersonate.IDTokenConfig{
 		Audience:        audience,
 		TargetPrincipal: email,
 		IncludeEmail:    true,
 	}
-	idTokenSource, err := impersonate.IDTokenSource(ctx, conf,
+	idTokenSource, err := impl.NewIDTokenSource(ctx, conf,
 		option.WithTokenSource(accessToken.(*Token).Source()))
 	if err != nil {
 		return "", err
@@ -259,6 +256,8 @@ func (Provider) NewIdentityToken(ctx context.Context, accessToken bifröst.Token
 
 	return idToken.AccessToken, nil
 }
+
+var serviceAccountEmailRegex = regexp.MustCompile(ServiceAccountEmailPattern)
 
 func serviceAccountEmail(serviceAccount *corev1.ServiceAccount, o *bifröst.Options) (string, error) {
 	e := uncheckedServiceAccountEmail(serviceAccount, o)
@@ -296,6 +295,8 @@ type GKEMetadata struct {
 	mu     sync.RWMutex
 	loaded bool
 }
+
+var gkeMetadata GKEMetadata
 
 // load loads the GKE cluster metadata from the metadata service, assuming the
 // pod is running on a GKE node/pod. It will fail otherwise, and this
@@ -388,4 +389,46 @@ type TokenSupplier string
 // SubjectToken implements externalaccount.SubjectTokenSupplier.
 func (s TokenSupplier) SubjectToken(context.Context, externalaccount.SupplierOptions) (string, error) {
 	return string(s), nil
+}
+
+// WithImplementation sets the implementation for the provider. For tests.
+func WithImplementation(impl implProvider) bifröst.ProviderOption {
+	return func(po any) {
+		if o, ok := po.(*options); ok {
+			o.impl = impl
+		}
+	}
+}
+
+type implProvider interface {
+	GKEMetadata() *GKEMetadata
+	NewDefaultAccessTokenSource(ctx context.Context, scope ...string) (oauth2.TokenSource, error)
+	NewAccessTokenSource(ctx context.Context, conf *externalaccount.Config) (oauth2.TokenSource, error)
+	NewIDTokenSource(ctx context.Context, config *impersonate.IDTokenConfig, opts ...option.ClientOption) (oauth2.TokenSource, error)
+}
+
+func getOptions(opts ...bifröst.Option) (*bifröst.Options, implProvider) {
+	var o bifröst.Options
+	o.Apply(opts...)
+	po := options{impl: impl{}}
+	o.ApplyProviderOptions(&po)
+	return &o, po.impl
+}
+
+type impl struct{}
+
+func (impl) GKEMetadata() *GKEMetadata {
+	return &gkeMetadata
+}
+
+func (impl) NewDefaultAccessTokenSource(ctx context.Context, scopes ...string) (oauth2.TokenSource, error) {
+	return google.DefaultTokenSource(ctx, scopes...)
+}
+
+func (impl) NewAccessTokenSource(ctx context.Context, conf *externalaccount.Config) (oauth2.TokenSource, error) {
+	return externalaccount.NewTokenSource(ctx, *conf)
+}
+
+func (impl) NewIDTokenSource(ctx context.Context, config *impersonate.IDTokenConfig, opts ...option.ClientOption) (oauth2.TokenSource, error) {
+	return impersonate.IDTokenSource(ctx, *config, opts...)
 }

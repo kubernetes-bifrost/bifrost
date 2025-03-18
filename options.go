@@ -138,7 +138,7 @@ func WithPreferDirectAccess() Option {
 // WithProviderOptions sets the provider-specific options for getting a token.
 func WithProviderOptions(opts ...ProviderOption) Option {
 	return func(o *Options) {
-		o.ProviderOptions = opts
+		o.ProviderOptions = append(o.ProviderOptions, opts...)
 	}
 }
 
