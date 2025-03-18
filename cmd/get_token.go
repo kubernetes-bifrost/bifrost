@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
-	gcp "github.com/kubernetes-bifrost/bifrost/providers/gcp"
+	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 )
 
 const (
