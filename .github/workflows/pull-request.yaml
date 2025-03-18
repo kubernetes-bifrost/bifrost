@@ -22,14 +22,7 @@
 
 name: Pull Request
 
-on:
-  pull_request:
-    branches: [main]
-    paths:
-    - '*.go'
-    - Makefile
-    - testing/**
-    - .github/**
+on: [pull_request]
 
 jobs:
   pull-request:
