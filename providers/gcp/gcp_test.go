@@ -54,7 +54,7 @@ func TestWithServiceAccountEmail(t *testing.T) {
 		{
 			name:        "present",
 			email:       "test@project-id.iam.gserviceaccount.com",
-			expectedKey: "6ee56ae4144eb0f42b173dc8ddf2fe0c6994f8084e7999db56c12ff90b2d7711",
+			expectedKey: "da7b9dbfa3ec01db68b32c7f8bfa24322b9a73c965efc2b37834cd31060f3aaa",
 		},
 		{
 			name:        "absent",
@@ -142,7 +142,7 @@ func TestProvider_BuildCacheKey(t *testing.T) {
 				bifröst.WithDefaults(bifröst.WithProviderOptions(
 					gcp.WithServiceAccountEmail("defaults@project-id.iam.gserviceaccount.com"))),
 			},
-			expectedKey: "8d5329367aa4abcbe03a816b79b27e49719f5ab40c11337e6c5cc6d682f2b88d",
+			expectedKey: "12a43f116254259fbdd60ddd88301d0880b1c272baf26095d16f1b52df27ac59",
 		},
 		{
 			name: "service account email from annotations has precedence over default",
@@ -157,7 +157,7 @@ func TestProvider_BuildCacheKey(t *testing.T) {
 				bifröst.WithDefaults(bifröst.WithProviderOptions(
 					gcp.WithServiceAccountEmail("defaults@project-id.iam.gserviceaccount.com"))),
 			},
-			expectedKey: "5e0674803ea49ad18b775fc6d54afa6254da67b21888b2416d4fe67495ecca51",
+			expectedKey: "b6492b105bff1853007becdf3a7d255a1afcddd88c88f43f9a859f1ea2acb9af",
 		},
 		{
 			name:           "service account email from defaults",
@@ -166,7 +166,7 @@ func TestProvider_BuildCacheKey(t *testing.T) {
 				bifröst.WithDefaults(bifröst.WithProviderOptions(
 					gcp.WithServiceAccountEmail("defaults@project-id.iam.gserviceaccount.com"))),
 			},
-			expectedKey: "5719dbb77856c1358c8b99de8190cd3ad4c85b80ef72a4a87775528af51b4ce5",
+			expectedKey: "2706fe9436762ae74afafa0afb3fa170ff81e9485a0ac4cf90df56d2bb3331e8",
 		},
 		{
 			name: "invalid service account email",
