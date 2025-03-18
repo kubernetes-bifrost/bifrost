@@ -104,7 +104,7 @@ func (Provider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...bif
 			return "", err
 		}
 		if email != "" {
-			keyParts = append(keyParts, fmt.Sprintf("googleServiceAccount=%s", email))
+			keyParts = append(keyParts, fmt.Sprintf("gcpServiceAccount=%s", email))
 		}
 	}
 
