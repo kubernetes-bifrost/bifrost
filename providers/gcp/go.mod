@@ -4,7 +4,7 @@ go 1.24.1
 
 require (
 	cloud.google.com/go/compute/metadata v0.6.0
-	github.com/kubernetes-bifrost/bifrost v0.5.0
+	github.com/kubernetes-bifrost/bifrost v0.6.0
 	github.com/onsi/gomega v1.36.2
 	golang.org/x/oauth2 v0.28.0
 	google.golang.org/api v0.226.0
