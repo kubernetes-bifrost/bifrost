@@ -31,7 +31,7 @@ Then use the library like this:
 
 ```go
 import (
-	"github.com/kubernetes-bifrost/bifrost"
+	bifröst "github.com/kubernetes-bifrost/bifrost"
 	"github.com/kubernetes-bifrost/bifrost/providers/aws"
 	"github.com/kubernetes-bifrost/bifrost/providers/azure"
 	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
