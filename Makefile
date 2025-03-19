@@ -43,6 +43,10 @@ tidy:
 test: bin/setup-envtest
 	go test -v -coverprofile=coverage.out ./...
 	cd providers/gcp; go test -v -coverprofile=../../coverage-gcp.out ./...
+	for pkg in testing; do \
+		cat coverage.out | grep -v github.com/kubernetes-bifrost/bifrost/$$pkg/ >> coverage.tmp; \
+		mv coverage.tmp coverage.out; \
+	done
 
 bin/setup-envtest: bin
 	GOBIN=$(shell pwd)/bin/ go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
