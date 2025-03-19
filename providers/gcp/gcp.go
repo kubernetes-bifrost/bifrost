@@ -255,7 +255,9 @@ func (Provider) NewIdentityToken(ctx context.Context, accessToken bifröst.Token
 		if err != nil {
 			return "", fmt.Errorf("failed to create HTTP transport: %w", err)
 		}
-		idOpts = append(idOpts, option.WithHTTPClient(&http.Client{Transport: transport}))
+		idOpts = []option.ClientOption{
+			option.WithHTTPClient(&http.Client{Transport: transport}),
+		}
 	}
 
 	idTokenSource, err := impl.NewIDTokenSource(ctx, conf, idOpts...)
