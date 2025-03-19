@@ -143,14 +143,12 @@ Expires At: %[3]s (%[4]s)
 
 		// Parse service account reference.
 		if getTokenCmdFlags.serviceAccount != "" {
-			parts := strings.Split(getTokenCmdFlags.serviceAccount, "/")
-			if len(parts) != 2 {
-				return fmt.Errorf("invalid service account reference: '%s'. expected format: namespace/name",
-					getTokenCmdFlags.serviceAccount)
+			if kubeNamespace == "" {
+				return errors.New("namespace is required for service account reference")
 			}
 			getTokenCmdFlags.serviceAccountRef = &client.ObjectKey{
-				Namespace: parts[0],
-				Name:      parts[1],
+				Name:      getTokenCmdFlags.serviceAccount,
+				Namespace: kubeNamespace,
 			}
 		}
 
@@ -229,7 +227,7 @@ func init() {
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.outputFormat, "output", "o", "",
 		"The output format for the token. Allowed values: "+allowedOutputFormats)
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.serviceAccount, "service-account", "s", "",
-		"A service account reference for token exchange in the format namespace/name")
+		"A service account name for token exchange")
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.audience, "audience", "a", "",
 		"The token audience for the cloud provider")
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.identityProvider, "identity-provider", "i", "",

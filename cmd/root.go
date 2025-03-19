@@ -23,9 +23,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/rest"
@@ -35,9 +37,11 @@ import (
 )
 
 var (
-	kubeConfig  string
-	kubeContext string
-	kubeClient  client.Client
+	kubeConfig    string
+	kubeContext   string
+	kubeNamespace string
+
+	kubeClient client.Client
 )
 
 var rootCmd = &cobra.Command{
@@ -63,7 +67,9 @@ func init() {
 		filepath.Join(homedir.HomeDir(), ".kube", "config"),
 		"Path to the kubeconfig file")
 	rootCmd.PersistentFlags().StringVar(&kubeContext, "context", "",
-		"Name of the kubeconfig context to use")
+		"Name of the kubeconfig context to use. Defaults to the current context in the kubeconfig file")
+	rootCmd.PersistentFlags().StringVarP(&kubeNamespace, "namespace", "n", "",
+		"Kubernetes namespace to use. Defaults to the namespace of the context")
 }
 
 func main() {
@@ -73,17 +79,40 @@ func main() {
 }
 
 func loadKubeConfig() (*rest.Config, error) {
-	if conf, err := rest.InClusterConfig(); err == nil {
+	// Try in-cluster config first.
+	conf, err := rest.InClusterConfig()
+	if err == nil {
+		if kubeNamespace == "" {
+			b, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+			if err != nil {
+				return nil, fmt.Errorf("failed to read namespace from service account: %w", err)
+			}
+			kubeNamespace = strings.TrimSpace(string(b))
+		}
 		return conf, nil
 	}
+	if !errors.Is(err, rest.ErrNotInCluster) {
+		return nil, err
+	}
 
-	overrides := &clientcmd.ConfigOverrides{CurrentContext: kubeContext}
-	if kubeContext == "" {
-		overrides = nil
+	// Fallback to kubeconfig.
+	var overrides *clientcmd.ConfigOverrides
+	if kubeContext != "" {
+		overrides = &clientcmd.ConfigOverrides{CurrentContext: kubeContext}
 	}
 	loader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeConfig},
 		overrides,
 	)
-	return loader.ClientConfig()
+	conf, err = loader.ClientConfig()
+	if err != nil {
+		return nil, err
+	}
+	if kubeNamespace == "" {
+		kubeNamespace, _, err = loader.Namespace()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get namespace from kubeconfig: %w", err)
+		}
+	}
+	return conf, nil
 }
