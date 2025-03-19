@@ -1,5 +1,7 @@
 # Bifröst
 
+[![codecov](https://codecov.io/gh/kubernetes-bifrost/bifrost/branch/main/graph/badge.svg)](https://codecov.io/gh/kubernetes-bifrost/bifrost)
+
 <img src="./docs/img/logo.jpg" alt="Bifröst" width="300" height="300" />
 
 Bifröst helps you get secret-less access on cloud providers by leveraging the
