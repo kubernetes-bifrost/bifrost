@@ -29,7 +29,7 @@ builds:
   - amd64
   - arm64
   binary: bifrost
-  main: ./cmd/cli
+  main: ./cmd
   ldflags:
   - -s -w -X main.VERSION={{ .Version }}
   env:
@@ -41,7 +41,7 @@ builds:
   - amd64
   - arm64
   binary: bifrost
-  main: ./cmd/cli
+  main: ./cmd
   ldflags:
   - -s -w -X main.VERSION={{ .Version }}
   env:
@@ -52,7 +52,7 @@ builds:
   goarch:
   - amd64
   binary: bifrost
-  main: ./cmd/cli
+  main: ./cmd
   ldflags:
   - -s -w -X main.VERSION={{ .Version }}
   env:
