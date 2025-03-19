@@ -23,13 +23,18 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/elazarl/goproxy"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -61,16 +66,27 @@ var getTokenCmdFlags struct {
 	containerRegistry  string
 	preferDirectAccess bool
 
-	outputFormatter   func(bifröst.Token) error
+	outputFormatter   func(any) error
 	serviceAccountRef *client.ObjectKey
 	proxyURL          *url.URL
 
 	opts []bifröst.Option
+
+	debugProxy *http.Server
 }
 
 var getTokenCmd = &cobra.Command{
 	Use:   "token",
 	Short: "Get a token for accessing resources on a cloud provider.",
+	PersistentPostRun: func(*cobra.Command, []string) {
+		if getTokenCmdFlags.debugProxy != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := getTokenCmdFlags.debugProxy.Shutdown(ctx); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to stop debug proxy: %v\n", err)
+			}
+		}
+	},
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		parent := cmd.Parent()
 		if err := parent.PersistentPreRunE(parent, args); err != nil {
@@ -80,13 +96,13 @@ var getTokenCmd = &cobra.Command{
 		// Parse output format.
 		switch getTokenCmdFlags.outputFormat {
 		case outputFormatJSON:
-			getTokenCmdFlags.outputFormatter = func(t bifröst.Token) error {
+			getTokenCmdFlags.outputFormatter = func(t any) error {
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
 				return enc.Encode(t)
 			}
 		case outputFormatYAML:
-			getTokenCmdFlags.outputFormatter = func(t bifröst.Token) error {
+			getTokenCmdFlags.outputFormatter = func(t any) error {
 				b, err := json.Marshal(t)
 				if err != nil {
 					return err
@@ -99,18 +115,18 @@ var getTokenCmd = &cobra.Command{
 			}
 		case outputFormatRaw:
 			if getTokenCmdFlags.containerRegistry != "" {
-				getTokenCmdFlags.outputFormatter = func(t bifröst.Token) error {
+				getTokenCmdFlags.outputFormatter = func(t any) error {
 					fmt.Println(t.(*bifröst.ContainerRegistryLogin).Password)
 					return nil
 				}
 			}
 		case outputFormatReflect, "":
 			if getTokenCmdFlags.containerRegistry != "" {
-				getTokenCmdFlags.outputFormatter = func(t bifröst.Token) error {
+				getTokenCmdFlags.outputFormatter = func(t any) error {
 					c := t.(*bifröst.ContainerRegistryLogin)
 					fmt.Printf(`Username:   %[1]s
 Password:   %[2]s
-Expires At: %[3]s (Time Remaining: %[4]s)
+Expires At: %[3]s (%[4]s)
 `,
 						c.Username,
 						c.Password,
@@ -151,6 +167,25 @@ Expires At: %[3]s (Time Remaining: %[4]s)
 			getTokenCmdFlags.proxyURLString = os.Getenv("PROXY_URL")
 		}
 		if getTokenCmdFlags.proxyURLString != "" {
+			if getTokenCmdFlags.proxyURLString == "debug" {
+				lis, err := net.Listen("tcp", "localhost:0")
+				if err != nil {
+					return fmt.Errorf("failed to start debug proxy listener: %w", err)
+				}
+				debugProxyHandler := goproxy.NewProxyHttpServer()
+				debugProxyHandler.Verbose = true
+				debugProxy := &http.Server{
+					Addr:    lis.Addr().String(),
+					Handler: debugProxyHandler,
+				}
+				go func() {
+					if err := debugProxy.Serve(lis); err != nil && !errors.Is(err, http.ErrServerClosed) {
+						fmt.Fprintf(os.Stderr, "failed to start debug proxy: %v\n", err)
+					}
+				}()
+				getTokenCmdFlags.debugProxy = debugProxy
+				getTokenCmdFlags.proxyURLString = "http://" + lis.Addr().String()
+			}
 			proxyURL, err := url.Parse(getTokenCmdFlags.proxyURLString)
 			if err != nil {
 				return fmt.Errorf("failed to parse proxy URL: %w", err)
@@ -200,7 +235,8 @@ func init() {
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.identityProvider, "identity-provider", "i", "",
 		"An identity provider for token exchange. Allowed values: "+gcp.ProviderName)
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.proxyURLString, "proxy-url", "p", "",
-		"An HTTP/S proxy URL for talking to the cloud provider Security Token Service. Can also be specified via PROXY_URL environment variable")
+		"An HTTP/S proxy URL for talking to the cloud provider Security Token Service. "+
+			"Can also be specified via PROXY_URL environment variable. When set to 'debug' a debug proxy will be started")
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.containerRegistry, "container-registry", "c", "",
 		"A container registry host. When specified a username and password for the registry will be retrieved")
 	getTokenCmd.PersistentFlags().BoolVarP(&getTokenCmdFlags.preferDirectAccess, "prefer-direct-access", "d", false,

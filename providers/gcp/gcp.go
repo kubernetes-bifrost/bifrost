@@ -25,6 +25,7 @@ package gcp
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"regexp"
 	"sync"
 	"time"
@@ -35,6 +36,7 @@ import (
 	"golang.org/x/oauth2/google/externalaccount"
 	"google.golang.org/api/impersonate"
 	"google.golang.org/api/option"
+	htransport "google.golang.org/api/transport/http"
 	corev1 "k8s.io/api/core/v1"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
@@ -150,10 +152,6 @@ func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 
 	o, impl := getOptions(opts...)
 
-	if hc := o.GetHTTPClient(); hc != nil {
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, hc)
-	}
-
 	audience := o.GetAudience(serviceAccount)
 	if audience == "" {
 		// If the audience is not set, we assume the token is for GKE
@@ -194,6 +192,10 @@ func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 		conf.TokenInfoURL = "https://sts.googleapis.com/v1/introspect"
 	}
 
+	if hc := o.GetHTTPClient(); hc != nil {
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, hc)
+	}
+
 	src, err := impl.NewAccessTokenSource(ctx, conf)
 	if err != nil {
 		return nil, err
@@ -226,8 +228,8 @@ func (Provider) NewIdentityToken(ctx context.Context, accessToken bifröst.Token
 
 	o, impl := getOptions(opts...)
 
-	if hc := o.GetHTTPClient(); hc != nil {
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, hc)
+	if audience == "" {
+		return "", fmt.Errorf("audience is required for identity tokens")
 	}
 
 	email, err := serviceAccountEmail(serviceAccount, o)
@@ -243,8 +245,20 @@ func (Provider) NewIdentityToken(ctx context.Context, accessToken bifröst.Token
 		TargetPrincipal: email,
 		IncludeEmail:    true,
 	}
-	idTokenSource, err := impl.NewIDTokenSource(ctx, conf,
-		option.WithTokenSource(accessToken.(*Token).Source()))
+
+	idOpts := []option.ClientOption{
+		option.WithTokenSource(accessToken.(*Token).Source()),
+	}
+
+	if hc := o.GetHTTPClient(); hc != nil {
+		transport, err := impl.NewTransport(ctx, hc.Transport, idOpts...)
+		if err != nil {
+			return "", fmt.Errorf("failed to create HTTP transport: %w", err)
+		}
+		idOpts = append(idOpts, option.WithHTTPClient(&http.Client{Transport: transport}))
+	}
+
+	idTokenSource, err := impl.NewIDTokenSource(ctx, conf, idOpts...)
 	if err != nil {
 		return "", err
 	}
@@ -405,6 +419,7 @@ type implProvider interface {
 	NewDefaultAccessTokenSource(ctx context.Context, scope ...string) (oauth2.TokenSource, error)
 	NewAccessTokenSource(ctx context.Context, conf *externalaccount.Config) (oauth2.TokenSource, error)
 	NewIDTokenSource(ctx context.Context, config *impersonate.IDTokenConfig, opts ...option.ClientOption) (oauth2.TokenSource, error)
+	NewTransport(ctx context.Context, base http.RoundTripper, opts ...option.ClientOption) (http.RoundTripper, error)
 }
 
 func getOptions(opts ...bifröst.Option) (*bifröst.Options, implProvider) {
@@ -431,4 +446,8 @@ func (impl) NewAccessTokenSource(ctx context.Context, conf *externalaccount.Conf
 
 func (impl) NewIDTokenSource(ctx context.Context, config *impersonate.IDTokenConfig, opts ...option.ClientOption) (oauth2.TokenSource, error) {
 	return impersonate.IDTokenSource(ctx, *config, opts...)
+}
+
+func (impl) NewTransport(ctx context.Context, base http.RoundTripper, opts ...option.ClientOption) (http.RoundTripper, error) {
+	return htransport.NewTransport(ctx, base, opts...)
 }
