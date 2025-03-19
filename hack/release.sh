@@ -49,13 +49,12 @@ git pull
 
 # Tag main module.
 git tag -s -m $new_version $new_version
+git push origin $new_version
 
 # Tag providers.
 for path in providers/*; do
     provider=$(basename $path)
     tag="providers/$provider/$new_version"
     git tag -s -m $tag $tag
+    git push origin $tag
 done
-
-# Push the tags.
-git push --tags
