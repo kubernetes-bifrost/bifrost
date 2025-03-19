@@ -49,6 +49,7 @@ var rootCmd = &cobra.Command{
 	Short: `Bifröst helps you get secret-less access on cloud providers
 by leveraging the Kubernetes built-in OpenID Connect (OIDC)
 token issuer for service accounts.`,
+	SilenceUsage: true,
 	PersistentPreRunE: func(*cobra.Command, []string) error {
 		conf, err := loadKubeConfig()
 		if err != nil {
