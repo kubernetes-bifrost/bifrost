@@ -31,7 +31,7 @@ if [[ ! $new_version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 # Check if there are uncommitted changes.
-if [ $$(git status --porcelain=v1 2>/dev/null | wc -l) -ne 0 ]; then
+if [ $(git status --porcelain=v1 2>/dev/null | wc -l) -ne 0 ]; then
     echo "There are uncommitted changes. Please commit or stash them before bumping the versions."
     exit 1
 fi
