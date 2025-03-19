@@ -489,6 +489,7 @@ func TestGetToken(t *testing.T) {
 		{
 			name: "error on creating container registry login",
 			provider: mockProvider{
+				registryHost:     "test-registry",
 				registryLoginErr: true,
 			},
 			opts: []bifröst.Option{
@@ -558,7 +559,7 @@ func TestGetToken(t *testing.T) {
 		},
 		{
 			name:     "error on building identity provider cache key",
-			provider: mockProvider{},
+			provider: mockProvider{cacheKeyServiceAccount: true},
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{}),
 				bifröst.WithServiceAccount(client.ObjectKey{
@@ -593,7 +594,8 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "cached-default-token"},
 		},
 		{
-			name: "cached service account token",
+			name:     "cached service account token",
+			provider: mockProvider{cacheKeyServiceAccount: true},
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
 					key:   "ab4572406e9fa61442fda6423e6c0728c2f43155f83e060341e83961cf6b7903",
@@ -607,7 +609,8 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "cached-token"},
 		},
 		{
-			name: "cached identity token access token",
+			name:     "cached identity token access token",
+			provider: mockProvider{cacheKeyServiceAccount: true},
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
 					key:   "6f02da35ec951a19f3cdaf0fdf014dfcf58fa4f8a658f2272ca130165948357a",
@@ -625,7 +628,8 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "cached-identity-token-access-token"},
 		},
 		{
-			name: "cached container registry login from identity token access token",
+			name:     "cached container registry login from identity token access token",
+			provider: mockProvider{cacheKeyServiceAccount: true},
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
 					key:   "5f756d38a58f271d5ef964c8dfc16992fd0dc94e0363bdba32fb51dcbdea4255",
@@ -655,7 +659,8 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "cached-registry-default-token"},
 		},
 		{
-			name: "cached container registry login from service account",
+			name:     "cached container registry login from service account",
+			provider: mockProvider{cacheKeyServiceAccount: true},
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
 					key:   "6cca0eb7fea5c3d956347da39af6db9a09138b6c6c2f77c39bf5ce5c1b749a8a",
@@ -715,6 +720,7 @@ func TestGetToken(t *testing.T) {
 					tokenExpectDirectAccess:  true,
 					token:                    &mockToken{value: "identity-provider-access-token"},
 					identityTokenAccessToken: &mockToken{value: "identity-provider-access-token"},
+					identityTokenAudience:    "provider-audience",
 					identityToken:            identityToken,
 				}),
 				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "bifrost"}),
@@ -727,6 +733,7 @@ func TestGetToken(t *testing.T) {
 			name: "container registry login from default",
 			provider: mockProvider{
 				defaultToken:             &mockToken{value: "default-access-token"},
+				registryHost:             "test-registry",
 				registryLoginAccessToken: &mockToken{value: "default-access-token"},
 				registryLogin:            &bifröst.ContainerRegistryLogin{Username: "registry-default-token"},
 			},
@@ -744,6 +751,7 @@ func TestGetToken(t *testing.T) {
 				token:                    &mockToken{value: "service-account-access-token"},
 				registryLoginAccessToken: &mockToken{value: "service-account-access-token"},
 				registryLogin:            &bifröst.ContainerRegistryLogin{Username: "registry-token"},
+				registryHost:             "test-registry",
 			},
 			opts: []bifröst.Option{
 				bifröst.WithServiceAccount(client.ObjectKey{
@@ -763,6 +771,7 @@ func TestGetToken(t *testing.T) {
 				token:                    &mockToken{value: "registry-identity-token-access-token"},
 				registryLoginAccessToken: &mockToken{value: "registry-identity-token-access-token"},
 				registryLogin:            &bifröst.ContainerRegistryLogin{Username: "registry-identity-token-access-token"},
+				registryHost:             "test-registry",
 			},
 			opts: []bifröst.Option{
 				bifröst.WithServiceAccount(client.ObjectKey{
@@ -776,8 +785,9 @@ func TestGetToken(t *testing.T) {
 					tokenOIDCClient:          oidcClient,
 					tokenExpectDirectAccess:  true,
 					token:                    &mockToken{value: "identity-provider-access-token"},
-					identityToken:            identityToken,
 					identityTokenAccessToken: &mockToken{value: "identity-provider-access-token"},
+					identityTokenAudience:    "provider-audience",
+					identityToken:            identityToken,
 				}),
 				bifröst.WithContainerRegistry("test-registry"),
 			},
@@ -921,6 +931,7 @@ type mockCache struct {
 type mockProvider struct {
 	name                     string
 	cacheKeyErr              bool
+	cacheKeyServiceAccount   bool
 	defaultToken             bifröst.Token
 	defaultTokenErr          bool
 	defaultTokenProxyURL     string
@@ -932,11 +943,13 @@ type mockProvider struct {
 	tokenProxyURL            string
 	tokenOIDCClient          *http.Client
 	tokenExpectDirectAccess  bool
+	registryHost             string
 	registryLogin            *bifröst.ContainerRegistryLogin
 	registryLoginErr         bool
 	registryLoginAccessToken bifröst.Token
 	identityToken            string
 	identityTokenErr         bool
+	identityTokenAudience    string
 	identityTokenAccessToken bifröst.Token
 }
 
@@ -959,6 +972,10 @@ func (m *mockProvider) GetName() string {
 }
 
 func (m *mockProvider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...bifröst.Option) (string, error) {
+	if m.cacheKeyServiceAccount && serviceAccount == nil {
+		return "", fmt.Errorf("expected service account, got nil")
+	}
+
 	var o bifröst.Options
 	o.Apply(opts...)
 
@@ -1023,6 +1040,11 @@ func (m *mockProvider) NewAccessToken(ctx context.Context, identityToken string,
 		}
 	}
 
+	// Check service account.
+	if serviceAccount == nil {
+		return nil, fmt.Errorf("expected service account, got nil")
+	}
+
 	// Check proxy URL.
 	if m.tokenProxyURL != "" {
 		if o.GetHTTPClient() == nil {
@@ -1045,6 +1067,12 @@ func (m *mockProvider) NewAccessToken(ctx context.Context, identityToken string,
 func (m *mockProvider) NewRegistryLogin(ctx context.Context, containerRegistry string,
 	accessToken bifröst.Token, opts ...bifröst.Option) (*bifröst.ContainerRegistryLogin, error) {
 
+	// Check container registry.
+	if m.registryHost != containerRegistry {
+		return nil, fmt.Errorf("expected container registry %q, got %q",
+			m.registryHost, containerRegistry)
+	}
+
 	// Check access token.
 	if m.registryLoginAccessToken != nil {
 		if accessToken.(*mockToken).value != m.registryLoginAccessToken.(*mockToken).value {
@@ -1065,6 +1093,16 @@ func (m *mockProvider) NewIdentityToken(ctx context.Context, accessToken bifrös
 			return "", fmt.Errorf("expected access token %q, got %q",
 				m.identityTokenAccessToken.(*mockToken).value, accessToken.(*mockToken).value)
 		}
+	}
+
+	// Check service account.
+	if serviceAccount == nil {
+		return "", fmt.Errorf("expected service account, got nil")
+	}
+
+	// Check audience.
+	if audience != m.identityTokenAudience {
+		return "", fmt.Errorf("expected audience %q, got %q", m.identityTokenAudience, audience)
 	}
 
 	return m.identityToken, getError(m.identityTokenErr)
