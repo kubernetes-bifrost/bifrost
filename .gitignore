@@ -6,3 +6,4 @@ terraform.*
 *.logs
 *.tgz
 config.cue
+cov*.out
