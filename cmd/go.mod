@@ -10,8 +10,8 @@ replace (
 require (
 	github.com/elazarl/goproxy v1.7.2
 	github.com/golang-jwt/jwt/v5 v5.2.1
-	github.com/kubernetes-bifrost/bifrost v0.7.0
-	github.com/kubernetes-bifrost/bifrost/providers/gcp v0.4.0
+	github.com/kubernetes-bifrost/bifrost v0.8.0
+	github.com/kubernetes-bifrost/bifrost/providers/gcp v0.8.0
 	github.com/spf13/cobra v1.9.1
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.32.3
