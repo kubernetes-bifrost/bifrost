@@ -72,6 +72,6 @@ for pattern in \*.go \*.c \*/templates/\*.cue \*testdata/\*.cue; do
 done
 
 # files with hashtag comments
-for pattern in \*.yaml \*.yml \*.tf ./Dockerfile ./Dockerfile.test ./Makefile; do
+for pattern in \*.yaml \*.yml \*.tf \*.sh ./Dockerfile ./Dockerfile.test ./Makefile; do
     license_pattern "#" "$pattern"
 done
