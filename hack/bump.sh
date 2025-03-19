@@ -42,6 +42,9 @@ if [ "$(git branch --show-current)" != "main" ]; then
     exit 1
 fi
 
+# Pull the latest changes.
+git pull
+
 # Create release branch. First, if the branch already exists, delete it.
 if git show-ref --verify --quiet refs/heads/release; then
     git branch -D release
