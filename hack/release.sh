@@ -56,3 +56,6 @@ for path in providers/*; do
     tag="providers/$provider/$new_version"
     git tag -s -m $tag $tag
 done
+
+# Push the tags.
+git push --tags
