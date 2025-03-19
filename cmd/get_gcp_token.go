@@ -80,7 +80,7 @@ var getGCPTokenCmd = &cobra.Command{
 
 		if getGCPTokenCmdFlags.idTokenAudience != "" {
 			if getTokenCmdFlags.serviceAccountRef == nil {
-				return fmt.Errorf("id-token-audience requires a service account")
+				return fmt.Errorf("for issuing a GCP ID token a kubernetes service account is required")
 			}
 			getTokenCmdFlags.opts = append(getTokenCmdFlags.opts,
 				bifröst.WithPreferDirectAccess())
@@ -88,7 +88,7 @@ var getGCPTokenCmd = &cobra.Command{
 
 		token, err := bifröst.GetToken(cmd.Context(), gcp.Provider{}, getTokenCmdFlags.opts...)
 		if err != nil {
-			return fmt.Errorf("failed to get GCP token: %w", err)
+			return fmt.Errorf("failed to issue GCP access token: %w", err)
 		}
 
 		if getTokenCmdFlags.outputFormatter != nil && getGCPTokenCmdFlags.idTokenAudience == "" {
@@ -104,7 +104,7 @@ var getGCPTokenCmd = &cobra.Command{
 			idToken, err := gcp.Provider{}.NewIdentityToken(cmd.Context(), token, sa,
 				getGCPTokenCmdFlags.idTokenAudience, getTokenCmdFlags.opts...)
 			if err != nil {
-				return fmt.Errorf("failed to get GCP ID token: %w", err)
+				return fmt.Errorf("failed to issue GCP ID token: %w", err)
 			}
 			rawOutput = idToken
 			if getTokenCmdFlags.outputFormatter != nil {
