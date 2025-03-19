@@ -410,7 +410,12 @@ func TestProvider_NewIdentityToken(t *testing.T) {
 		expectedErr   string
 	}{
 		{
-			name: "error due to invalid service account email",
+			name:        "error due to audience not set",
+			expectedErr: "audience is required for identity tokens",
+		},
+		{
+			name:     "error due to invalid service account email",
+			audience: "some-audience",
 			opts: []bifröst.Option{
 				bifröst.WithProviderOptions(gcp.WithServiceAccountEmail("invalid-email")),
 			},
@@ -418,10 +423,23 @@ func TestProvider_NewIdentityToken(t *testing.T) {
 		},
 		{
 			name:        "error due to service account email not set",
+			audience:    "some-audience",
 			expectedErr: "GCP service account email is required for identity tokens",
 		},
 		{
-			name: "error on new id token source",
+			name:     "error on new transport",
+			audience: "some-audience",
+			opts: []bifröst.Option{
+				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
+				bifröst.WithProviderOptions(
+					gcp.WithImplementation(&mockImpl{transportErr: true}),
+					gcp.WithServiceAccountEmail("nit@project-id.iam.gserviceaccount.com")),
+			},
+			expectedErr: "failed to create HTTP transport: mock error",
+		},
+		{
+			name:     "error on new id token source",
+			audience: "some-audience",
 			opts: []bifröst.Option{
 				bifröst.WithProviderOptions(
 					gcp.WithImplementation(&mockImpl{sourceErr: true}),
@@ -430,7 +448,8 @@ func TestProvider_NewIdentityToken(t *testing.T) {
 			expectedErr: "mock error",
 		},
 		{
-			name: "error on new id token from source",
+			name:     "error on new id token from source",
+			audience: "some-audience",
 			opts: []bifröst.Option{
 				bifröst.WithProviderOptions(
 					gcp.WithImplementation(&mockImpl{}),
@@ -680,6 +699,7 @@ type mockImpl struct {
 	t                 *testing.T
 	token             *oauth2.Token
 	sourceErr         bool
+	transportErr      bool
 	gkeMetadata       gcp.GKEMetadata
 	expectedProxyURL  string
 	expectedExtConfig *externalaccount.Config
@@ -690,8 +710,12 @@ type mockTokenSource struct {
 	token *oauth2.Token
 }
 
+func (m *mockImpl) GKEMetadata() *gcp.GKEMetadata {
+	return &m.gkeMetadata
+}
+
 func (m *mockImpl) NewDefaultAccessTokenSource(ctx context.Context, scopes ...string) (oauth2.TokenSource, error) {
-	if err := checkProxyURL(ctx, m.expectedProxyURL); err != nil {
+	if err := checkOAuth2ProxyURL(ctx, m.expectedProxyURL); err != nil {
 		return nil, err
 	}
 	if len(scopes) > 0 {
@@ -701,7 +725,7 @@ func (m *mockImpl) NewDefaultAccessTokenSource(ctx context.Context, scopes ...st
 }
 
 func (m *mockImpl) NewAccessTokenSource(ctx context.Context, conf *externalaccount.Config) (oauth2.TokenSource, error) {
-	if err := checkProxyURL(ctx, m.expectedProxyURL); err != nil {
+	if err := checkOAuth2ProxyURL(ctx, m.expectedProxyURL); err != nil {
 		return nil, err
 	}
 	if m.expectedExtConfig != nil {
@@ -720,9 +744,6 @@ func (m *mockImpl) NewAccessTokenSource(ctx context.Context, conf *externalaccou
 }
 
 func (m *mockImpl) NewIDTokenSource(ctx context.Context, config *impersonate.IDTokenConfig, opts ...option.ClientOption) (oauth2.TokenSource, error) {
-	if err := checkProxyURL(ctx, m.expectedProxyURL); err != nil {
-		return nil, err
-	}
 	if m.expectedImpConfig != nil {
 		m.t.Helper()
 		g := NewWithT(m.t)
@@ -731,8 +752,8 @@ func (m *mockImpl) NewIDTokenSource(ctx context.Context, config *impersonate.IDT
 	return &mockTokenSource{m.token}, getError(m.sourceErr)
 }
 
-func (m *mockImpl) GKEMetadata() *gcp.GKEMetadata {
-	return &m.gkeMetadata
+func (m *mockImpl) NewTransport(ctx context.Context, base http.RoundTripper, opts ...option.ClientOption) (http.RoundTripper, error) {
+	return base, getError(m.transportErr)
 }
 
 func (m *mockTokenSource) Token() (*oauth2.Token, error) {
@@ -742,7 +763,7 @@ func (m *mockTokenSource) Token() (*oauth2.Token, error) {
 	return m.token, nil
 }
 
-func checkProxyURL(ctx context.Context, expected string) error {
+func checkOAuth2ProxyURL(ctx context.Context, expected string) error {
 	v := ctx.Value(oauth2.HTTPClient)
 	if expected == "" {
 		if v != nil {
