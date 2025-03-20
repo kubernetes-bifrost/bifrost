@@ -36,6 +36,7 @@ import (
 
 	"github.com/elazarl/goproxy"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -64,6 +65,7 @@ var getTokenCmdFlags struct {
 	identityProvider   string
 	proxyURLString     string
 	containerRegistry  string
+	grpcEndpoint       string
 	preferDirectAccess bool
 
 	outputFormatter   func(any) error
@@ -73,20 +75,35 @@ var getTokenCmdFlags struct {
 	opts []bifröst.Option
 
 	debugProxy *http.Server
+
+	grpcClient *grpc.ClientConn
+}
+
+func init() {
+	rootCmd.AddCommand(getTokenCmd)
+
+	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.outputFormat, "output", "o", "",
+		"The output format for the token. Allowed values: "+allowedOutputFormats)
+	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.serviceAccount, "service-account", "s", "",
+		"A service account name for token exchange")
+	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.audience, "audience", "a", "",
+		"The token audience for the cloud provider")
+	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.identityProvider, "identity-provider", "i", "",
+		"An identity provider for token exchange. Allowed values: "+gcp.ProviderName)
+	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.proxyURLString, "proxy-url", "p", "",
+		"An HTTP/S proxy URL for talking to the cloud provider Security Token Service. "+
+			"Can also be specified via PROXY_URL environment variable. When set to 'debug' a debug proxy will be started")
+	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.containerRegistry, "container-registry", "c", "",
+		"A container registry host. When specified a username and password for the registry will be retrieved")
+	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.grpcEndpoint, "grpc-endpoint", "", "",
+		"The endpoint of the gRPC server to request a token from. Optional, defaults to impersonating the local service account")
+	getTokenCmd.PersistentFlags().BoolVarP(&getTokenCmdFlags.preferDirectAccess, "prefer-direct-access", "d", false,
+		"Give preference to impersonating kubernetes service accounts directly instead of an identity from the cloud provider")
 }
 
 var getTokenCmd = &cobra.Command{
 	Use:   "token",
 	Short: "Get a token for accessing resources on a cloud provider.",
-	PersistentPostRun: func(*cobra.Command, []string) {
-		if getTokenCmdFlags.debugProxy != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := getTokenCmdFlags.debugProxy.Shutdown(ctx); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to stop debug proxy: %v\n", err)
-			}
-		}
-	},
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		parent := cmd.Parent()
 		if err := parent.PersistentPreRunE(parent, args); err != nil {
@@ -142,13 +159,16 @@ Expires At: %[3]s (%[4]s)
 		}
 
 		// Parse service account reference.
+		if getTokenCmdFlags.serviceAccount == "" {
+			getTokenCmdFlags.serviceAccount = rootCmdFlags.KubeServiceAccount
+		}
 		if getTokenCmdFlags.serviceAccount != "" {
-			if kubeNamespace == "" {
-				return errors.New("namespace is required for service account reference")
+			if rootCmdFlags.KubeNamespace == "" {
+				return fmt.Errorf("namespace is required for service account reference")
 			}
 			getTokenCmdFlags.serviceAccountRef = &client.ObjectKey{
 				Name:      getTokenCmdFlags.serviceAccount,
-				Namespace: kubeNamespace,
+				Namespace: rootCmdFlags.KubeNamespace,
 			}
 		}
 
@@ -200,7 +220,7 @@ Expires At: %[3]s (%[4]s)
 			getTokenCmdFlags.opts = append(getTokenCmdFlags.opts,
 				bifröst.WithAudience(getTokenCmdFlags.audience))
 		}
-		if getTokenCmdFlags.identityProvider != "" { // Always GCP.
+		if getTokenCmdFlags.identityProvider != "" { // Always GCP, see comment above.
 			getTokenCmdFlags.opts = append(getTokenCmdFlags.opts,
 				bifröst.WithIdentityProvider(gcp.Provider{}))
 		}
@@ -217,26 +237,28 @@ Expires At: %[3]s (%[4]s)
 				bifröst.WithPreferDirectAccess())
 		}
 
+		// Create gRPC client.
+		if getTokenCmdFlags.grpcEndpoint != "" {
+			_, _, grpcCreds, _, err := getTLSConfig()
+			if err != nil {
+				return fmt.Errorf("failed to get TLS config: %w", err)
+			}
+			getTokenCmdFlags.grpcClient, err = grpc.NewClient(getTokenCmdFlags.grpcEndpoint,
+				grpc.WithTransportCredentials(grpcCreds))
+			if err != nil {
+				return fmt.Errorf("failed to create gRPC client: %w", err)
+			}
+		}
+
 		return nil
 	},
-}
-
-func init() {
-	rootCmd.AddCommand(getTokenCmd)
-
-	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.outputFormat, "output", "o", "",
-		"The output format for the token. Allowed values: "+allowedOutputFormats)
-	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.serviceAccount, "service-account", "s", "",
-		"A service account name for token exchange")
-	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.audience, "audience", "a", "",
-		"The token audience for the cloud provider")
-	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.identityProvider, "identity-provider", "i", "",
-		"An identity provider for token exchange. Allowed values: "+gcp.ProviderName)
-	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.proxyURLString, "proxy-url", "p", "",
-		"An HTTP/S proxy URL for talking to the cloud provider Security Token Service. "+
-			"Can also be specified via PROXY_URL environment variable. When set to 'debug' a debug proxy will be started")
-	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.containerRegistry, "container-registry", "c", "",
-		"A container registry host. When specified a username and password for the registry will be retrieved")
-	getTokenCmd.PersistentFlags().BoolVarP(&getTokenCmdFlags.preferDirectAccess, "prefer-direct-access", "d", false,
-		"Give preference to impersonating kubernetes service accounts directly instead of an identity from the cloud provider")
+	PersistentPostRun: func(*cobra.Command, []string) {
+		if getTokenCmdFlags.debugProxy != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := getTokenCmdFlags.debugProxy.Shutdown(ctx); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to stop debug proxy: %v\n", err)
+			}
+		}
+	},
 }

@@ -26,48 +26,21 @@
 version: 2
 updates:
 - package-ecosystem: gomod
-  directory: /
+  directories:
+  - /
+  - /grpc
+  - /providers/aws
+  - /providers/azure
+  - /providers/gcp
+  - /grpc/aws/go
+  - /grpc/azure/go
+  - /grpc/gcp/go
+  - /cmd
   open-pull-requests-limit: 1
   schedule:
     interval: weekly
   groups:
-    bifrost:
-      patterns:
-      - "*"
-- package-ecosystem: gomod
-  directory: /cmd
-  open-pull-requests-limit: 1
-  schedule:
-    interval: weekly
-  groups:
-    cmd:
-      patterns:
-      - "*"
-- package-ecosystem: gomod
-  directory: /providers/aws
-  open-pull-requests-limit: 1
-  schedule:
-    interval: weekly
-  groups:
-    aws:
-      patterns:
-      - "*"
-- package-ecosystem: gomod
-  directory: /providers/azure
-  open-pull-requests-limit: 1
-  schedule:
-    interval: weekly
-  groups:
-    azure:
-      patterns:
-      - "*"
-- package-ecosystem: gomod
-  directory: /providers/gcp
-  open-pull-requests-limit: 1
-  schedule:
-    interval: weekly
-  groups:
-    gcp:
+    go:
       patterns:
       - "*"
 - package-ecosystem: github-actions

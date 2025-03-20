@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # MIT License
 #
 # Copyright (c) 2025 kubernetes-bifrost
@@ -20,37 +22,51 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-SHELL := /bin/bash
-GOBIN := $(shell pwd)/bin
+set -ex
 
-.PHONY: all
-all: tidy test bin/bifrost
+# Main module.
+go mod tidy
+go fmt ./...
 
-.PHONY: tidy
-tidy:
-	./hack/tidy.sh
-	./hack/license.sh
+# gRPC tools.
+cd grpc
+go mod tidy
+go tool github.com/bufbuild/buf/cmd/buf dep update
+cd -
 
-.PHONY: test
-test: bin/setup-envtest
-	go test -v -coverprofile=coverage.out ./...
-	cd providers/gcp; go test -v -coverprofile=../../coverage-gcp.out ./...
-	for pkg in testing; do \
-		cat coverage.out | grep -v github.com/kubernetes-bifrost/bifrost/$$pkg/ >> coverage.tmp; \
-		mv coverage.tmp coverage.out; \
-	done
+# Providers.
+for provider_path in providers/*; do
+    provider=$(basename $provider_path)
 
-bin/setup-envtest: bin
-	GOBIN=${GOBIN} go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-	./bin/setup-envtest use --bin-dir ./bin
+    # Module.
+    cd $provider_path
+    go mod tidy
+    go fmt ./...
+    cd -
 
-bin:
-	mkdir -p bin/
+    # gRPC proto.
+    if ! cd grpc/$provider; then
+        continue
+    fi
+    find ../ -maxdepth 1 -type f -exec cp {} . \;
+    mv bifrost.proto.tpl $provider.proto
+    echo "" >> $provider.proto
+    cat $provider.proto.tpl >> $provider.proto
+    sed -i.bak "s/PROVIDER/$provider/g" $provider.proto && rm $provider.proto.bak
+    go tool github.com/bufbuild/buf/cmd/buf generate
+    cd -
 
-.PHONY: bin/bifrost
-bin/bifrost: bin
-	cd cmd; go build -o ../bin/bifrost
+    # gRPC gen.
+    cd grpc/$provider/go
+    if [ ! -f go.mod ]; then
+        go mod init github.com/kubernetes-bifrost/bifrost/grpc/$provider/go
+    fi
+    go mod tidy
+    cd -
+done
 
-.PHONY: run
-run: bin/bifrost
-	./bin/bifrost server --unsafe-dev
+# Binary.
+cd cmd
+go mod tidy
+go fmt ./...
+cd -
