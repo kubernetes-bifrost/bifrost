@@ -47,6 +47,71 @@ fi
 # Pull the latest changes.
 git pull
 
+# Create release branch. First, if the branch already exists, delete it.
+if git show-ref --verify --quiet refs/heads/release; then
+    git branch -D release
+fi
+git checkout -b release
+
+# Bump the versions in go.mod files.
+for f in `find . -wholename \*go.mod`; do
+    tmp_f=$(mktemp)
+    changed=""
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ $line =~ github\.com/kubernetes-bifrost/bifrost.*\ v.* ]]; then
+            pkg=$(echo $line | awk '{print $1}')
+            echo -e "\t$pkg $new_version" >> $tmp_f
+            changed="true"
+        else
+            echo "$line" >> $tmp_f
+        fi
+    done < "$f"
+    if [ "$changed" == "true" ]; then
+        mv $tmp_f $f
+    else
+        rm -f $tmp_f
+    fi
+done
+
+# If there are no changes, exit.
+if git --no-pager diff --exit-code; then
+    exit 0
+fi
+
+# Prompt for confirmation.
+echo ""
+echo "Some versions were upgraded. Proceed with release? y/n"
+echo ""
+read -r input
+
+# If the user did not confirm, exit.
+if [ "$input" != "y" ]; then
+    echo "Aborting release."
+    exit 0
+fi
+
+# Proceed with the release.
+git add .
+git commit -asm "Release $new_version"
+git push --set-upstream origin release
+gh pr create --base main --head release --fill-verbose
+
+# Now wait on a loop until the PR is merged.
+while true; do
+    pr_status=$(gh pr view --json state --jq '.state')
+    if [ "$pr_status" == "MERGED" ]; then
+        break
+    fi
+    echo "PR not merged yet. Waiting for 30 seconds."
+    sleep 30
+done
+
+# Checkout main branch, pull and cleanup.
+git checkout main
+git pull
+git fetch --prune --all --force --tags
+git branch -d release
+
 # Tag main module.
 git tag -s -m $new_version $new_version
 git push origin $new_version
