@@ -64,14 +64,14 @@ builds:
 archives:
 - name_template: "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
   id: nix
-  builds: [darwin, linux]
-  format: tar.gz
+  ids: [darwin, linux]
+  formats: [tar.gz]
   files:
   - LICENSE
 - name_template: "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
   id: windows
-  builds: [windows]
-  format: zip
+  ids: [windows]
+  formats: [zip]
   files:
   - LICENSE
 changelog:
