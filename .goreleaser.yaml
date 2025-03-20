@@ -31,7 +31,7 @@ builds:
   - arm64
   binary: bifrost
   main: .
-  working_dir: ./cmd
+  dir: ./cmd
   ldflags:
   - -s -w -X main.VERSION={{ .Version }}
   env:
@@ -44,7 +44,7 @@ builds:
   - arm64
   binary: bifrost
   main: .
-  working_dir: ./cmd
+  dir: ./cmd
   ldflags:
   - -s -w -X main.VERSION={{ .Version }}
   env:
@@ -56,7 +56,7 @@ builds:
   - amd64
   binary: bifrost
   main: .
-  working_dir: ./cmd
+  dir: ./cmd
   ldflags:
   - -s -w -X main.VERSION={{ .Version }}
   env:
