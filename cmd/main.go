@@ -22,9 +22,20 @@
 
 package main
 
-import "os"
+import (
+	"os"
+
+	"github.com/spf13/cobra"
+)
 
 func main() {
+	// This makes cobra run all PersistentPreRuns in the natural order.
+	// Honestly, should be the default behavior.
+	// Refs:
+	// - https://github.com/spf13/cobra/issues/252
+	// - https://github.com/spf13/cobra/pull/2044/files
+	cobra.EnableTraverseRunHooks = true
+
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}

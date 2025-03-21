@@ -427,7 +427,7 @@ func TestOptions_GetContainerRegistry(t *testing.T) {
 	}
 }
 
-func TestOptions_GetPreferDirectAccess(t *testing.T) {
+func TestOptions_PreferDirectAccess(t *testing.T) {
 	for _, tt := range []struct {
 		name               string
 		opts               []bifröst.Option
@@ -439,9 +439,9 @@ func TestOptions_GetPreferDirectAccess(t *testing.T) {
 			preferDirectAccess: true,
 		},
 		{
-			name:               "default option only",
+			name:               "default option only (ignored)",
 			opts:               []bifröst.Option{bifröst.WithDefaults(bifröst.WithPreferDirectAccess())},
-			preferDirectAccess: true,
+			preferDirectAccess: false,
 		},
 		{
 			name: "both",
@@ -462,7 +462,7 @@ func TestOptions_GetPreferDirectAccess(t *testing.T) {
 			var o bifröst.Options
 			o.Apply(tt.opts...)
 
-			g.Expect(o.GetPreferDirectAccess()).To(Equal(tt.preferDirectAccess))
+			g.Expect(o.PreferDirectAccess()).To(Equal(tt.preferDirectAccess))
 		})
 	}
 }

@@ -100,7 +100,7 @@ func (Provider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...bif
 
 	var keyParts []string
 
-	if serviceAccount != nil && !o.GetPreferDirectAccess() {
+	if serviceAccount != nil && !o.PreferDirectAccess() {
 		email, err := serviceAccountEmail(serviceAccount, &o)
 		if err != nil {
 			return "", err
@@ -176,7 +176,7 @@ func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 	}
 
 	var email string
-	if !o.GetPreferDirectAccess() {
+	if !o.PreferDirectAccess() {
 		var err error
 		email, err = serviceAccountEmail(serviceAccount, o)
 		if err != nil {

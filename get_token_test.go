@@ -40,7 +40,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
@@ -48,7 +47,7 @@ import (
 )
 
 func TestGetToken(t *testing.T) {
-	ctx := ctrl.SetupSignalHandler()
+	ctx := context.Background()
 
 	g := NewWithT(t)
 
@@ -1056,8 +1055,8 @@ func (m *mockProvider) NewAccessToken(ctx context.Context, identityToken string,
 		}
 	}
 
-	// Check direct access.
-	if m.tokenExpectDirectAccess && !o.GetPreferDirectAccess() {
+	// Check prefer direct access.
+	if m.tokenExpectDirectAccess && !o.PreferDirectAccess() {
 		return nil, fmt.Errorf("expected direct access, got false")
 	}
 

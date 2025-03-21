@@ -71,7 +71,11 @@ func WithServiceAccount(serviceAccountRef client.ObjectKey, client Client) Optio
 	}
 }
 
-// WithAudience sets the audience for getting the Kubernetes service account token.
+// WithAudience sets the audience for which Kubernetes service account tokens
+// are issued. This is an identifier that will let the cloud provider know for
+// resources, domain or scopes the exchanged access token should be for. Each
+// cloud provider defines its own audience values, some define fixed values
+// and others define values that can be specific to the cluster.
 func WithAudience(audience string) Option {
 	return func(o *Options) {
 		o.audience = audience
@@ -110,8 +114,9 @@ func WithSupportedIdentityProviders(providers ...IdentityProvider) Option {
 	}
 }
 
-// WithProxyURL creates an HTTP client with the provided proxy URL
-// for getting the token.
+// WithProxyURL creates an HTTP client in the options with the provided
+// proxy URL. This client is used for talking to the Security Token
+// Service (STS) of the cloud provider.
 func WithProxyURL(proxyURL url.URL) Option {
 	proxy := func(r *http.Request) (*url.URL, error) {
 		if r != nil {
@@ -133,16 +138,24 @@ func WithProxyURL(proxyURL url.URL) Option {
 	}
 }
 
-// WithContainerRegistry sets the container registry host for getting the token.
+// WithContainerRegistry sets the container registry host for getting
+// container registry login credentials. Some providers are agnostic
+// to this option, others require it to be set.
 func WithContainerRegistry(registry string) Option {
 	return func(o *Options) {
 		o.containerRegistry = registry
 	}
 }
 
-// WithPreferDirectAccess sets the prefer direct access flag for getting the token.
-// It suggests that the provider should issue a token representing the service account
-// directly if possible, instead of an identity of the provider.
+// WithPreferDirectAccess sets the prefer direct access flag for
+// getting the token. It suggests that the provider should issue
+// a token representing the service account directly if possible,
+// instead of an identity of the provider. This flag exists only
+// to support issuing cloud provider access tokens through an
+// intermediary identity provider. The only cloud providers
+// supporting this require that the intermediary access token
+// issued for getting the intermediary identity token is issued
+// with direct access.
 func WithPreferDirectAccess() Option {
 	return func(o *Options) {
 		o.preferDirectAccess = true
@@ -157,6 +170,7 @@ func WithProviderOptions(opts ...ProviderOption) Option {
 }
 
 // WithDefaults sets the default options for getting a token.
+// Not all options support defaults.
 func WithDefaults(opts ...Option) Option {
 	return func(o *Options) {
 		var defaults Options
@@ -241,9 +255,7 @@ func (o *Options) GetContainerRegistry() string {
 	return o.containerRegistry
 }
 
-// GetPreferDirectAccess returns the prefer direct access flag.
-func (o *Options) GetPreferDirectAccess() bool {
-	// Prefer direct access could be set on the service account
-	// but we don't expose an API annotation for that yet.
-	return o.preferDirectAccess || o.Defaults.preferDirectAccess
+// PreferDirectAccess returns the prefer direct access flag.
+func (o *Options) PreferDirectAccess() bool {
+	return o.preferDirectAccess
 }

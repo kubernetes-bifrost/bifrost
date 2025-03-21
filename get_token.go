@@ -143,8 +143,8 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 	}
 
 	// Get token from cache or fetch a new one.
-	cacheKey, err := buildCacheKey(provider, identityProvider, serviceAccount,
-		providerAudience, identityProviderAudience, proxyURL, opts...)
+	cacheKey, err := buildCacheKey(provider, identityProvider, providerAudience, identityProviderAudience,
+		serviceAccount, proxyURL, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -153,17 +153,14 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 
 func newServiceAccountToken(ctx context.Context, client Client,
 	serviceAccount *corev1.ServiceAccount, audience string) (string, error) {
-
 	tokenReq := &authnv1.TokenRequest{
 		Spec: authnv1.TokenRequestSpec{
 			Audiences: []string{audience},
 		},
 	}
-
 	if err := client.SubResource("token").Create(ctx, serviceAccount, tokenReq); err != nil {
 		return "", fmt.Errorf("failed to create kubernetes service account token: %w", err)
 	}
-
 	return tokenReq.Status.Token, nil
 }
 
@@ -216,7 +213,6 @@ func urlFromClient(hc *http.Client) *url.URL {
 }
 
 func getProxyURL(ctx context.Context, serviceAccount *corev1.ServiceAccount, o *Options) (*url.URL, error) {
-
 	// o.HTTPClient takes precedence over everything else
 	if hc := o.httpClient; hc != nil {
 		return urlFromClient(hc), nil
@@ -263,8 +259,8 @@ func getProxyURL(ctx context.Context, serviceAccount *corev1.ServiceAccount, o *
 	return proxyURL, nil
 }
 
-func buildCacheKey(provider, identityProvider Provider, serviceAccount *corev1.ServiceAccount,
-	providerAudience, identityProviderAudience string, proxyURL *url.URL, opts ...Option) (string, error) {
+func buildCacheKey(provider, identityProvider Provider, providerAudience, identityProviderAudience string,
+	serviceAccount *corev1.ServiceAccount, proxyURL *url.URL, opts ...Option) (string, error) {
 
 	// Add provider key parts.
 	providerKey, err := provider.BuildCacheKey(serviceAccount, opts...)

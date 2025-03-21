@@ -30,28 +30,34 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 type loggerContextKey struct{}
 
 var logLevel logrus.Level = logrus.InfoLevel
 
-func newLogger(level logrus.Level, root bool) (logrus.FieldLogger, *log.Logger, promErrorLogger) {
+func newLogger(level logrus.Level, root bool) (logrus.FieldLogger, logr.Logger) {
 	if root {
 		logLevel = level
 	}
+
 	l := logrus.New()
 	l.SetFormatter(&logrus.JSONFormatter{
 		TimestampFormat: time.RFC3339Nano,
 	})
 	l.SetLevel(level)
 
-	hl := log.New(httpErrorLogger{l}, "", 0)
-	pl := promErrorLogger{l}
+	cl := newCtrlLogger(l)
 
-	return l, hl, pl
+	if root {
+		ctrl.SetLogger(cl)
+	}
+
+	return l, cl
 }
 
 func fromContext(ctx context.Context) logrus.FieldLogger {
@@ -60,7 +66,7 @@ func fromContext(ctx context.Context) logrus.FieldLogger {
 			return l
 		}
 	}
-	l, _, _ := newLogger(logLevel, false /*root*/)
+	l, _ := newLogger(logLevel, false /*root*/)
 	return l
 }
 
@@ -68,22 +74,34 @@ func intoContext(ctx context.Context, l logrus.FieldLogger) context.Context {
 	return context.WithValue(ctx, loggerContextKey{}, l)
 }
 
-func debug() bool {
-	return logLevel >= logrus.DebugLevel
-}
+// ================
+// net/http adapter
+// ================
 
 type httpErrorLogger struct {
 	l logrus.FieldLogger
 }
 
+func newHTTPLogger(l logrus.FieldLogger) *log.Logger {
+	return log.New(httpErrorLogger{l}, "", 0)
+}
+
 func (h httpErrorLogger) Write(b []byte) (n int, _ error) {
-	err := fmt.Errorf("%s", string(b))
+	err := fmt.Errorf("%s", strings.TrimSpace(string(b)))
 	h.l.WithError(err).Error("net/http error")
 	return len(b), nil
 }
 
+// ==================
+// prometheus adapter
+// ==================
+
 type promErrorLogger struct {
 	l logrus.FieldLogger
+}
+
+func newPromLogger(l logrus.FieldLogger) promErrorLogger {
+	return promErrorLogger{l}
 }
 
 func (p promErrorLogger) Println(v ...any) {
@@ -111,4 +129,79 @@ func (p promErrorLogger) Println(v ...any) {
 	}
 
 	p.l.WithField("errors", pErr).Error(msg)
+}
+
+// ==========================
+// controller-runtime adapter
+// ==========================
+
+type ctrlLogger struct {
+	l logrus.FieldLogger
+}
+
+func logrToLogrus(level int) logrus.Level {
+	return logrus.Level(level + int(logrus.InfoLevel))
+}
+
+func newCtrlLogger(l logrus.FieldLogger) logr.Logger {
+	return logr.New(ctrlLogger{l})
+}
+
+func (c ctrlLogger) Init(logr.RuntimeInfo) {
+}
+
+func (c ctrlLogger) Enabled(level int) bool {
+	return logLevel >= logrToLogrus(level)
+}
+
+func (c ctrlLogger) WithName(name string) logr.LogSink {
+	return ctrlLogger{c.l.WithField("loggerName", name)}
+}
+
+func (c ctrlLogger) WithValues(keysAndValues ...any) logr.LogSink {
+	return ctrlLogger{withKeysAndValues(c.l, keysAndValues...)}
+}
+
+func (c ctrlLogger) Error(err error, msg string, keysAndValues ...any) {
+	withKeysAndValues(c.l.WithError(err), keysAndValues...).Error(msg)
+}
+
+func (c ctrlLogger) Info(level int, msg string, keysAndValues ...any) {
+	l := withKeysAndValues(c.l, keysAndValues...)
+
+	lvl := logrToLogrus(level)
+
+	if tracer, ok := l.(interface{ Trace(...any) }); ok {
+		if lvl >= logrus.TraceLevel {
+			tracer.Trace(msg)
+			return
+		}
+	}
+
+	switch {
+	case lvl <= logrus.PanicLevel:
+		l.Panic(msg)
+	case lvl == logrus.FatalLevel:
+		l.Fatal(msg)
+	case lvl == logrus.ErrorLevel:
+		l.Error(msg)
+	case lvl == logrus.WarnLevel:
+		l.Warn(msg)
+	case lvl == logrus.InfoLevel:
+		l.Info(msg)
+	case lvl >= logrus.DebugLevel:
+		l.Debug(msg)
+	}
+}
+
+func withKeysAndValues(l logrus.FieldLogger, keysAndValues ...any) logrus.FieldLogger {
+	m := make(logrus.Fields, len(keysAndValues)/2)
+	for i := 0; i < len(keysAndValues); i += 2 {
+		k, ok := keysAndValues[i].(string)
+		if !ok {
+			k = fmt.Sprint(keysAndValues[i])
+		}
+		m[k] = keysAndValues[i+1]
+	}
+	return l.WithFields(m)
 }

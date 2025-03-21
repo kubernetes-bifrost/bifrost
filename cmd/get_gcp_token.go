@@ -25,15 +25,20 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/spf13/cobra"
-	corev1 "k8s.io/api/core/v1"
+	"google.golang.org/grpc"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
 	gcppb "github.com/kubernetes-bifrost/bifrost/grpc/gcp/go"
@@ -60,8 +65,10 @@ var getGCPTokenCmd = &cobra.Command{
 	Use:   "gcp",
 	Short: "Get a token for accessing resources on GCP.",
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		ctx := rootCmdFlags.ctx
+
 		if getTokenCmdFlags.grpcEndpoint != "" {
-			return callGCPService(cmd.Context())
+			return callGCPService(ctx)
 		}
 
 		if getGCPTokenCmdFlags.serviceAccountEmail != "" {
@@ -86,14 +93,11 @@ var getGCPTokenCmd = &cobra.Command{
 		}
 
 		if getGCPTokenCmdFlags.idTokenAudience != "" {
-			if getTokenCmdFlags.serviceAccountRef == nil {
-				return fmt.Errorf("for issuing a GCP ID token a kubernetes service account is required")
-			}
 			getTokenCmdFlags.opts = append(getTokenCmdFlags.opts,
 				bifröst.WithPreferDirectAccess())
 		}
 
-		token, err := bifröst.GetToken(cmd.Context(), gcp.Provider{}, getTokenCmdFlags.opts...)
+		token, err := bifröst.GetToken(ctx, gcp.Provider{}, getTokenCmdFlags.opts...)
 		if err != nil {
 			return fmt.Errorf("failed to issue GCP access token: %w", err)
 		}
@@ -104,11 +108,11 @@ var getGCPTokenCmd = &cobra.Command{
 
 		rawOutput := token.(*gcp.Token).AccessToken
 		if getGCPTokenCmdFlags.idTokenAudience != "" {
-			sa := &corev1.ServiceAccount{}
-			if err := kubeClient.Get(cmd.Context(), *getTokenCmdFlags.serviceAccountRef, sa); err != nil {
-				return fmt.Errorf("failed to get service account: %w", err)
+			serviceAccount := getTokenCmdFlags.serviceAccountObj
+			if serviceAccount == nil {
+				return fmt.Errorf("for issuing a GCP ID token a kubernetes service account is required")
 			}
-			idToken, err := gcp.Provider{}.NewIdentityToken(cmd.Context(), token, sa,
+			idToken, err := gcp.Provider{}.NewIdentityToken(ctx, token, serviceAccount,
 				getGCPTokenCmdFlags.idTokenAudience, getTokenCmdFlags.opts...)
 			if err != nil {
 				return fmt.Errorf("failed to issue GCP ID token: %w", err)
@@ -128,7 +132,7 @@ var getGCPTokenCmd = &cobra.Command{
 			return printIDToken(rawOutput)
 		}
 
-		return printAccesstoken(cmd.Context(), token.(*gcp.Token))
+		return printAccesstoken(ctx, token.(*gcp.Token))
 	},
 }
 
@@ -226,4 +230,78 @@ func callGCPService(ctx context.Context) error {
 	fmt.Println(resp)
 
 	return nil
+}
+
+type gcpService struct {
+	gcp.Provider
+	gcppb.UnimplementedBifrostServer
+}
+
+func newGCPService() service {
+	return &gcpService{}
+}
+
+func (g *gcpService) registerService(server *grpc.Server) {
+	gcppb.RegisterBifrostServer(server, g)
+}
+
+func (*gcpService) registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
+	return gcppb.RegisterBifrostHandlerFromEndpoint(ctx, mux, endpoint, opts)
+}
+
+func (g *gcpService) GetToken(ctx context.Context, req *gcppb.GetTokenRequest) (*gcppb.GetTokenResponse, error) {
+	fmt.Println("yahoo gcp!", req.GetValue())
+	return &gcppb.GetTokenResponse{}, nil
+}
+
+var gkeMetadataServerFlag string
+
+func bindGKEMetadataServerFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVarP(&gkeMetadataServerFlag, "gke-metadata", "g", "",
+		"The GKE metadata to use for token retrieval in the format cluster-project-id/cluster-location/cluster-name")
+}
+
+func startGKEMetadataServer() (func() error, error) {
+	md := strings.Split(gkeMetadataServerFlag, "/")
+	if len(md) != 3 {
+		return nil, fmt.Errorf("invalid GKE metadata: '%s'. format: cluster-project-id/cluster-location/cluster-name",
+			gkeMetadataServerFlag)
+	}
+	projectID, location, name := md[0], md[1], md[2]
+
+	lis, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		return nil, fmt.Errorf("failed to listen: %w", err)
+	}
+
+	addr := lis.Addr().String()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/computeMetadata/v1/project/project-id":
+			fmt.Fprintf(w, "%s", projectID)
+		case "/computeMetadata/v1/instance/attributes/cluster-location":
+			fmt.Fprintf(w, "%s", location)
+		case "/computeMetadata/v1/instance/attributes/cluster-name":
+			fmt.Fprintf(w, "%s", name)
+		}
+	})
+
+	s := &http.Server{
+		Addr:    addr,
+		Handler: handler,
+	}
+
+	go func() {
+		if err := s.Serve(lis); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			panic(err)
+		}
+	}()
+
+	os.Setenv("GCE_METADATA_HOST", addr)
+
+	return func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return s.Shutdown(ctx)
+	}, nil
 }
