@@ -36,14 +36,15 @@ type Options struct {
 	ProviderOptions []ProviderOption
 	Defaults        *Options
 
-	cache              Cache
-	client             Client
-	serviceAccountRef  *client.ObjectKey
-	audience           string
-	identityProvider   IdentityProvider
-	httpClient         *http.Client
-	containerRegistry  string
-	preferDirectAccess bool
+	cache                      Cache
+	client                     Client
+	serviceAccountRef          *client.ObjectKey
+	audience                   string
+	identityProvider           *IdentityProvider
+	supportedIdentityProviders []IdentityProvider
+	httpClient                 *http.Client
+	containerRegistry          string
+	preferDirectAccess         bool
 }
 
 // Option is a functional option for getting a token.
@@ -90,9 +91,22 @@ func WithAudience(audience string) Option {
 //
 // This kind of intermediary impersonation is needed for clusters whose issuer
 // URL cannot be accessed publicly and cannot be changed, e.g. GKE clusters.
+//
+// Passing a nil provider disables the use of an identity provider.
 func WithIdentityProvider(provider IdentityProvider) Option {
 	return func(o *Options) {
-		o.identityProvider = provider
+		o.identityProvider = &provider
+	}
+}
+
+// WithSupportedIdentityProviders allows registering identity providers to
+// be chosen from the service account annotation. If the service account
+// annotation is not set, then no identity provider is used. If
+// WithIdentityProvider is set, it takes precedence over the service account
+// annotation.
+func WithSupportedIdentityProviders(providers ...IdentityProvider) Option {
+	return func(o *Options) {
+		o.supportedIdentityProviders = append(o.supportedIdentityProviders, providers...)
 	}
 }
 
@@ -169,29 +183,53 @@ func (o *Options) ApplyProviderOptions(opts any) {
 
 // GetAudience returns the configured audience taking into account the
 // service account annotation.
-func (o *Options) GetAudience(serviceAccount *corev1.ServiceAccount) (aud string) {
-	if aud = o.audience; aud != "" {
-		return
+func (o *Options) GetAudience(serviceAccount *corev1.ServiceAccount) string {
+	if aud := o.audience; aud != "" {
+		return aud
 	}
 
 	if serviceAccount != nil {
-		if aud = serviceAccount.Annotations[ServiceAccountAudience]; aud != "" {
-			return
+		if aud := serviceAccount.Annotations[ServiceAccountAudience]; aud != "" {
+			return aud
 		}
 	}
 
-	if aud = o.Defaults.audience; aud != "" {
-		return
+	return o.Defaults.audience
+}
+
+// GetIdentityProvider returns the configured identity provider. If WithIdentityProvider
+// is set, it takes precedence over the service account annotation. If not set, the
+// service account annotation is used to choose among the supported identity providers
+// set with WithSupportedIdentityProviders. If none match, nil is returned. If the
+// annotation is not set, the default identity provider is returned.
+func (o *Options) GetIdentityProvider(serviceAccount *corev1.ServiceAccount) IdentityProvider {
+	if o.identityProvider != nil {
+		return *o.identityProvider
 	}
 
-	return
+	if serviceAccount != nil {
+		if providerName, ok := serviceAccount.Annotations[ServiceAccountIdentityProvider]; ok {
+			for _, provider := range o.supportedIdentityProviders {
+				if provider.GetName() == providerName {
+					return provider
+				}
+			}
+			return nil
+		}
+	}
+
+	if idp := o.Defaults.identityProvider; idp != nil {
+		return *idp
+	}
+
+	return nil
 }
 
 // GetHTTPClient returns the HTTP client for getting the token.
 func (o *Options) GetHTTPClient() *http.Client {
 	// GetToken resolves the HTTP client from the options
-	// and from the service account, which may contain a
-	// reference to a proxy secret.
+	// and from the service account (which may contain a
+	// reference to a proxy secret).
 	return o.httpClient
 }
 

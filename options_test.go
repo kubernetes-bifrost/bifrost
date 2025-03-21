@@ -34,6 +34,45 @@ import (
 	bifröst "github.com/kubernetes-bifrost/bifrost"
 )
 
+func TestWithSupportedIdentityProviders(t *testing.T) {
+	g := NewWithT(t)
+
+	var o bifröst.Options
+	bifröst.WithSupportedIdentityProviders(&mockProvider{name: "foo"}, &mockProvider{name: "bar"})(&o)
+
+	provider := o.GetIdentityProvider(&corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				"serviceaccounts.bifrost-k8s.io/identityProvider": "bar",
+			},
+		},
+	})
+	g.Expect(provider).NotTo(BeNil())
+	g.Expect(provider.GetName()).To(Equal("bar"))
+
+	bifröst.WithSupportedIdentityProviders(&mockProvider{name: "baz"})(&o)
+
+	provider = o.GetIdentityProvider(&corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				"serviceaccounts.bifrost-k8s.io/identityProvider": "baz",
+			},
+		},
+	})
+	g.Expect(provider).NotTo(BeNil())
+	g.Expect(provider.GetName()).To(Equal("baz"))
+
+	provider = o.GetIdentityProvider(&corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				"serviceaccounts.bifrost-k8s.io/identityProvider": "foo",
+			},
+		},
+	})
+	g.Expect(provider).NotTo(BeNil())
+	g.Expect(provider.GetName()).To(Equal("foo"))
+}
+
 func TestWithProxyURL(t *testing.T) {
 	g := NewWithT(t)
 
@@ -218,6 +257,106 @@ func TestOptions_GetAudience(t *testing.T) {
 			o.Apply(tt.opts...)
 
 			g.Expect(o.GetAudience(tt.serviceAccount)).To(Equal(tt.expectedAudience))
+		})
+	}
+}
+
+func TestOptions_GetIdentityProvider(t *testing.T) {
+	for _, tt := range []struct {
+		name                         string
+		opts                         []bifröst.Option
+		serviceAccount               *corev1.ServiceAccount
+		expectedIdentityProviderName string
+	}{
+		{
+			name: "option has precedence over all other sources",
+			opts: []bifröst.Option{
+				bifröst.WithIdentityProvider(&mockProvider{name: "option-provider"}),
+				bifröst.WithSupportedIdentityProviders(&mockProvider{name: "supported-provider"}),
+				bifröst.WithDefaults(bifröst.WithIdentityProvider(&mockProvider{name: "default-provider"})),
+			},
+			serviceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"serviceaccounts.bifrost-k8s.io/identityProvider": "supported-provider",
+					},
+				},
+			},
+			expectedIdentityProviderName: "option-provider",
+		},
+		{
+			name: "option has precedence over all other sources, even if nil",
+			opts: []bifröst.Option{
+				bifröst.WithIdentityProvider(nil),
+				bifröst.WithSupportedIdentityProviders(&mockProvider{name: "supported-provider"}),
+				bifröst.WithDefaults(bifröst.WithIdentityProvider(&mockProvider{name: "default-provider"})),
+			},
+			serviceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"serviceaccounts.bifrost-k8s.io/identityProvider": "supported-provider",
+					},
+				},
+			},
+			expectedIdentityProviderName: "",
+		},
+		{
+			name: "identity provider from service account has precedence over default",
+			opts: []bifröst.Option{
+				bifröst.WithSupportedIdentityProviders(&mockProvider{name: "supported-provider"}),
+				bifröst.WithDefaults(bifröst.WithIdentityProvider(&mockProvider{name: "default-provider"})),
+			},
+			serviceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"serviceaccounts.bifrost-k8s.io/identityProvider": "supported-provider",
+					},
+				},
+			},
+			expectedIdentityProviderName: "supported-provider",
+		},
+		{
+			name: "no identity provider if the service account one is not supported",
+			opts: []bifröst.Option{
+				bifröst.WithDefaults(bifröst.WithIdentityProvider(&mockProvider{name: "default-provider"})),
+			},
+			serviceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"serviceaccounts.bifrost-k8s.io/identityProvider": "unsupported-provider",
+					},
+				},
+			},
+			expectedIdentityProviderName: "",
+		},
+		{
+			name: "default identity provider if the service account one is not set",
+			opts: []bifröst.Option{
+				bifröst.WithSupportedIdentityProviders(&mockProvider{name: "supported-provider"}),
+				bifröst.WithDefaults(bifröst.WithIdentityProvider(&mockProvider{name: "default-provider"})),
+			},
+			serviceAccount:               &corev1.ServiceAccount{},
+			expectedIdentityProviderName: "default-provider",
+		},
+		{
+			name:                         "no identity provider",
+			expectedIdentityProviderName: "",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var o bifröst.Options
+			o.Apply(tt.opts...)
+
+			provider := o.GetIdentityProvider(tt.serviceAccount)
+
+			if tt.expectedIdentityProviderName == "" {
+				g.Expect(provider).To(BeNil())
+			} else {
+				g.Expect(provider).NotTo(BeNil())
+				g.Expect(provider.GetName()).To(Equal(tt.expectedIdentityProviderName))
+			}
 		})
 	}
 }
