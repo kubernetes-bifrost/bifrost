@@ -79,9 +79,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 
 		// If an intermediary identity provider is configured, update the function
 		// for creating the identity token to use the identity provider.
-		if o.identityProvider != nil {
-			identityProvider = o.identityProvider
-
+		if identityProvider = o.GetIdentityProvider(serviceAccount); identityProvider != nil {
 			var err error
 			identityProviderAudience, err = identityProvider.GetAudience(ctx)
 			if err != nil {

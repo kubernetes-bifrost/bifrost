@@ -136,7 +136,7 @@ server only from pods running on the same node.
 			Subsystem: "http",
 			Name:      "request_latency_seconds",
 		}, []string{"method", "path", "status"})
-		observabilityInterceptor := newObservabilityInterceptor(serviceLatencySecs, logger)
+		observabilityInterceptor := newGRPCObservabilityInterceptor(serviceLatencySecs, logger)
 
 		// Configure gRPC services.
 		grpcServer := grpc.NewServer(grpc.UnaryInterceptor(observabilityInterceptor))
@@ -168,7 +168,7 @@ server only from pods running on the same node.
 			case r.URL.Path == "/healthz", r.URL.Path == "/readyz":
 				w.WriteHeader(http.StatusOK)
 			default:
-				statusRecorder := &statusRecorder{ResponseWriter: w}
+				statusRecorder := &httpStatusRecorder{ResponseWriter: w}
 				w = statusRecorder
 
 				start := time.Now()
@@ -223,7 +223,7 @@ server only from pods running on the same node.
 	},
 }
 
-func newObservabilityInterceptor(latencySecs *prometheus.SummaryVec,
+func newGRPCObservabilityInterceptor(latencySecs *prometheus.SummaryVec,
 	logger logrus.FieldLogger) grpc.UnaryServerInterceptor {
 
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo,
@@ -260,7 +260,7 @@ func newObservabilityInterceptor(latencySecs *prometheus.SummaryVec,
 				"human":   latency.String(),
 				"seconds": latency.Seconds(),
 			}
-			statusToLogger(statusText, statusObject, logger, err).
+			grpcStatusToLogger(statusText, statusObject, logger, err).
 				WithError(err).
 				WithField("latency", latencyFields).
 				Error("error handling request")
@@ -270,7 +270,7 @@ func newObservabilityInterceptor(latencySecs *prometheus.SummaryVec,
 	}
 }
 
-func statusToLogger(statusText string, statusObject *status.Status,
+func grpcStatusToLogger(statusText string, statusObject *status.Status,
 	logger logrus.FieldLogger, original error) logrus.FieldLogger {
 
 	withStatusCode := logger.WithField("statusCode", statusText)
@@ -300,18 +300,18 @@ func statusToLogger(statusText string, statusObject *status.Status,
 	return logger.WithField("status", s)
 }
 
-type statusRecorder struct {
+type httpStatusRecorder struct {
 	http.ResponseWriter
 
 	status int
 }
 
-func (s *statusRecorder) WriteHeader(status int) {
+func (s *httpStatusRecorder) WriteHeader(status int) {
 	s.status = status
 	s.ResponseWriter.WriteHeader(status)
 }
 
-func (s *statusRecorder) getStatus() int {
+func (s *httpStatusRecorder) getStatus() int {
 	if s.status == 0 {
 		return http.StatusOK
 	}
