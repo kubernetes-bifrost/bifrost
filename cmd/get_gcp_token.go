@@ -26,12 +26,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -39,19 +36,34 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
+	gcppb "github.com/kubernetes-bifrost/bifrost/grpc/gcp/go"
 	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 )
 
 var getGCPTokenCmdFlags struct {
 	serviceAccountEmail string
 	idTokenAudience     string
-	gkeMetadata         string
+}
+
+func init() {
+	getTokenCmd.AddCommand(getGCPTokenCmd)
+
+	getGCPTokenCmd.Flags().StringVarP(&getGCPTokenCmdFlags.serviceAccountEmail, "service-account-email", "e", "",
+		"The email of the GCP service account to impersonate")
+	getGCPTokenCmd.Flags().StringVar(&getGCPTokenCmdFlags.idTokenAudience, "id-token-audience", "",
+		"The audience for an ID token (gets an ID token instead of an access token)")
+
+	bindGKEMetadataServerFlag(getGCPTokenCmd)
 }
 
 var getGCPTokenCmd = &cobra.Command{
 	Use:   "gcp",
 	Short: "Get a token for accessing resources on GCP.",
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		if getTokenCmdFlags.grpcEndpoint != "" {
+			return callGCPService(cmd.Context())
+		}
+
 		if getGCPTokenCmdFlags.serviceAccountEmail != "" {
 			regex := regexp.MustCompile(gcp.ServiceAccountEmailPattern)
 			if !regex.MatchString(getGCPTokenCmdFlags.serviceAccountEmail) {
@@ -60,13 +72,8 @@ var getGCPTokenCmd = &cobra.Command{
 			}
 		}
 
-		if getGCPTokenCmdFlags.gkeMetadata != "" {
-			s := strings.Split(getGCPTokenCmdFlags.gkeMetadata, "/")
-			if len(s) != 3 {
-				return fmt.Errorf("invalid GKE metadata: '%s'. format: cluster-project-id/cluster-location/cluster-name",
-					getGCPTokenCmdFlags.gkeMetadata)
-			}
-			close, err := startGKEMetadataServer(s[0], s[1], s[2])
+		if gkeMetadataServerFlag != "" {
+			close, err := startGKEMetadataServer()
 			if err != nil {
 				return fmt.Errorf("failed to start GKE metadata server: %w", err)
 			}
@@ -123,53 +130,6 @@ var getGCPTokenCmd = &cobra.Command{
 
 		return printAccesstoken(cmd.Context(), token.(*gcp.Token))
 	},
-}
-
-func init() {
-	getTokenCmd.AddCommand(getGCPTokenCmd)
-
-	getGCPTokenCmd.Flags().StringVarP(&getGCPTokenCmdFlags.serviceAccountEmail, "service-account-email", "e", "",
-		"The email of the GCP service account to impersonate")
-	getGCPTokenCmd.Flags().StringVar(&getGCPTokenCmdFlags.idTokenAudience, "id-token-audience", "",
-		"The audience for an ID token (gets an ID token instead of an access token)")
-	getGCPTokenCmd.Flags().StringVarP(&getGCPTokenCmdFlags.gkeMetadata, "gke-metadata", "g", "",
-		"The GKE metadata to use for token retrieval in the format cluster-project-id/cluster-location/cluster-name")
-}
-
-func startGKEMetadataServer(projectID, location, name string) (func(), error) {
-	lis, err := net.Listen("tcp", ":0")
-	if err != nil {
-		return nil, fmt.Errorf("failed to listen: %w", err)
-	}
-
-	addr := lis.Addr().String()
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/computeMetadata/v1/project/project-id":
-			fmt.Fprintf(w, "%s", projectID)
-		case "/computeMetadata/v1/instance/attributes/cluster-location":
-			fmt.Fprintf(w, "%s", location)
-		case "/computeMetadata/v1/instance/attributes/cluster-name":
-			fmt.Fprintf(w, "%s", name)
-		}
-	})
-
-	s := &http.Server{
-		Addr:    addr,
-		Handler: handler,
-	}
-
-	go func() {
-		_ = s.Serve(lis)
-	}()
-
-	os.Setenv("GCE_METADATA_HOST", addr)
-
-	return func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = s.Shutdown(ctx)
-	}, nil
 }
 
 func printAccesstoken(ctx context.Context, t *gcp.Token) error {
@@ -250,6 +210,20 @@ Email:        %[3]s
 			aud[0],
 			email)
 	}
+
+	return nil
+}
+
+func callGCPService(ctx context.Context) error {
+	client := gcppb.NewBifrostClient(getTokenCmdFlags.grpcClient)
+
+	resp, err := client.GetToken(ctx, &gcppb.GetTokenRequest{
+		Value: "foobarbaz",
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println(resp)
 
 	return nil
 }

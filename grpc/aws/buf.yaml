@@ -20,37 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-SHELL := /bin/bash
-GOBIN := $(shell pwd)/bin
-
-.PHONY: all
-all: tidy test bin/bifrost
-
-.PHONY: tidy
-tidy:
-	./hack/tidy.sh
-	./hack/license.sh
-
-.PHONY: test
-test: bin/setup-envtest
-	go test -v -coverprofile=coverage.out ./...
-	cd providers/gcp; go test -v -coverprofile=../../coverage-gcp.out ./...
-	for pkg in testing; do \
-		cat coverage.out | grep -v github.com/kubernetes-bifrost/bifrost/$$pkg/ >> coverage.tmp; \
-		mv coverage.tmp coverage.out; \
-	done
-
-bin/setup-envtest: bin
-	GOBIN=${GOBIN} go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-	./bin/setup-envtest use --bin-dir ./bin
-
-bin:
-	mkdir -p bin/
-
-.PHONY: bin/bifrost
-bin/bifrost: bin
-	cd cmd; go build -o ../bin/bifrost
-
-.PHONY: run
-run: bin/bifrost
-	./bin/bifrost server --unsafe-dev
+version: v2
+name: buf.build/kubernetes-bifrost/bifrost
+deps:
+- buf.build/googleapis/googleapis

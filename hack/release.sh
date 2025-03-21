@@ -119,7 +119,12 @@ git push origin $new_version
 # Tag providers.
 for path in providers/*; do
     provider=$(basename $path)
-    tag="providers/$provider/$new_version"
-    git tag -s -m $tag $tag
-    git push origin $tag
+    tags=(
+        "providers/$provider/$new_version"
+        "grpc/$provider/go/$new_version"
+    )
+    for tag in "${tags[@]}"; do
+        git tag -s -m $tag $tag
+        git push origin $tag
+    done
 done
