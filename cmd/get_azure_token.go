@@ -35,8 +35,6 @@ import (
 
 type azureService struct {
 	azure.Provider
-
-	// UnimplementedBifrostServer implements azurepb.BifrostServer.mustEmbedUnimplementedBifrostServer().
 	azurepb.UnimplementedBifrostServer
 }
 
@@ -52,7 +50,6 @@ func (*azureService) registerGateway(ctx context.Context, mux *runtime.ServeMux,
 	return azurepb.RegisterBifrostHandlerFromEndpoint(ctx, mux, endpoint, opts)
 }
 
-// GetToken implements azurepb.BifrostServer.
 func (g *azureService) GetToken(ctx context.Context, req *azurepb.GetTokenRequest) (*azurepb.GetTokenResponse, error) {
 	fmt.Println("yahoo azure!", req.GetValue())
 	return &azurepb.GetTokenResponse{}, nil
