@@ -110,7 +110,7 @@ var getGCPTokenCmd = &cobra.Command{
 		if getGCPTokenCmdFlags.idTokenAudience != "" {
 			serviceAccount := getTokenCmdFlags.serviceAccountObj
 			if serviceAccount == nil {
-				return fmt.Errorf("for issuing a GCP ID token a kubernetes service account is required")
+				return fmt.Errorf("a kubernetes service account is required for issuing a GCP ID token")
 			}
 			idToken, err := gcp.Provider{}.NewIdentityToken(ctx, token, serviceAccount,
 				getGCPTokenCmdFlags.idTokenAudience, getTokenCmdFlags.opts...)
@@ -232,6 +232,10 @@ func callGCPService(ctx context.Context) error {
 	return nil
 }
 
+// ============
+// gRPC service
+// ============
+
 type gcpService struct {
 	gcp.Provider
 	gcppb.UnimplementedBifrostServer
@@ -253,6 +257,10 @@ func (g *gcpService) GetToken(ctx context.Context, req *gcppb.GetTokenRequest) (
 	fmt.Println("yahoo gcp!", req.GetValue())
 	return &gcppb.GetTokenResponse{}, nil
 }
+
+// ===================
+// GKE metadata server
+// ===================
 
 var gkeMetadataServerFlag string
 

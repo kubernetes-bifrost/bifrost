@@ -35,8 +35,6 @@ import (
 
 type awsService struct {
 	aws.Provider
-
-	// UnimplementedBifrostServer implements awspb.BifrostServer.mustEmbedUnimplementedBifrostServer().
 	awspb.UnimplementedBifrostServer
 }
 
@@ -52,7 +50,6 @@ func (*awsService) registerGateway(ctx context.Context, mux *runtime.ServeMux, e
 	return awspb.RegisterBifrostHandlerFromEndpoint(ctx, mux, endpoint, opts)
 }
 
-// GetToken implements awspb.BifrostServer.
 func (g *awsService) GetToken(ctx context.Context, req *awspb.GetTokenRequest) (*awspb.GetTokenResponse, error) {
 	fmt.Println("yahoo aws!", req.GetValue())
 	return &awspb.GetTokenResponse{}, nil
