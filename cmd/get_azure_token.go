@@ -30,27 +30,21 @@ import (
 	"google.golang.org/grpc"
 
 	azurepb "github.com/kubernetes-bifrost/bifrost/grpc/azure/go"
-	azure "github.com/kubernetes-bifrost/bifrost/providers/azure"
 )
 
 type azureService struct {
-	azure.Provider
 	azurepb.UnimplementedBifrostServer
 }
 
-func newAzureService() service {
-	return &azureService{}
+func (a azureService) register(server *grpc.Server) {
+	azurepb.RegisterBifrostServer(server, a)
 }
 
-func (g *azureService) registerService(server *grpc.Server) {
-	azurepb.RegisterBifrostServer(server, g)
-}
-
-func (*azureService) registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
+func (azureService) registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
 	return azurepb.RegisterBifrostHandlerFromEndpoint(ctx, mux, endpoint, opts)
 }
 
-func (g *azureService) GetToken(ctx context.Context, req *azurepb.GetTokenRequest) (*azurepb.GetTokenResponse, error) {
+func (azureService) GetToken(ctx context.Context, req *azurepb.GetTokenRequest) (*azurepb.GetTokenResponse, error) {
 	fmt.Println("yahoo azure!", req.GetValue())
 	return &azurepb.GetTokenResponse{}, nil
 }

@@ -201,6 +201,19 @@ func TestGetToken(t *testing.T) {
 	})
 	g.Expect(err).NotTo(HaveOccurred())
 
+	// Create service account with empty proxy secret name.
+	emptyProxySecretServiceAccount := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "empty-proxy-secret",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"serviceaccounts.bifrost-k8s.io/proxySecretName": "",
+			},
+		},
+	}
+	err = kubeClient.Create(ctx, emptyProxySecretServiceAccount)
+	g.Expect(err).NotTo(HaveOccurred())
+
 	// Create service account pointing to unexisting proxy secret.
 	invalidProxySecretServiceAccount := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
@@ -593,6 +606,21 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "cached-default-token"},
 		},
 		{
+			name: "cached default token because service account is set but is empty (even with non-empty default)",
+			opts: []bifröst.Option{
+				bifröst.WithCache(&mockCache{
+					key:   "b7dfea44cb4545bb43d7b7355b4b766fac8f7f669f72743f62c1d4a8bfe2af93",
+					token: &mockToken{value: "cached-default-token"},
+				}),
+				bifröst.WithServiceAccount(client.ObjectKey{}, kubeClient),
+				bifröst.WithDefaults(bifröst.WithServiceAccount(client.ObjectKey{
+					Name:      "default",
+					Namespace: "default",
+				}, kubeClient)),
+			},
+			expectedToken: &mockToken{value: "cached-default-token"},
+		},
+		{
 			name:     "cached service account token",
 			provider: mockProvider{cacheKeyServiceAccount: true},
 			opts: []bifröst.Option{
@@ -604,6 +632,21 @@ func TestGetToken(t *testing.T) {
 					Name:      "default",
 					Namespace: "default",
 				}, kubeClient),
+			},
+			expectedToken: &mockToken{value: "cached-token"},
+		},
+		{
+			name:     "cached default service account token",
+			provider: mockProvider{cacheKeyServiceAccount: true},
+			opts: []bifröst.Option{
+				bifröst.WithCache(&mockCache{
+					key:   "ab4572406e9fa61442fda6423e6c0728c2f43155f83e060341e83961cf6b7903",
+					token: &mockToken{value: "cached-token"},
+				}),
+				bifröst.WithDefaults(bifröst.WithServiceAccount(client.ObjectKey{
+					Name:      "default",
+					Namespace: "default",
+				}, kubeClient)),
 			},
 			expectedToken: &mockToken{value: "cached-token"},
 		},
@@ -681,6 +724,17 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "default-token"},
 		},
 		{
+			name: "default access token because service account is set but is empty (even with non-empty default)",
+			provider: mockProvider{
+				defaultToken: &mockToken{value: "default-token"},
+			},
+			opts: []bifröst.Option{
+				bifröst.WithServiceAccount(client.ObjectKey{}, kubeClient),
+				bifröst.WithDefaults(bifröst.WithServiceAccount(client.ObjectKey{}, kubeClient)),
+			},
+			expectedToken: &mockToken{value: "default-token"},
+		},
+		{
 			name: "access token",
 			provider: mockProvider{
 				audience:        "provider-audience",
@@ -720,6 +774,7 @@ func TestGetToken(t *testing.T) {
 					token:                    &mockToken{value: "identity-provider-access-token"},
 					identityTokenAccessToken: &mockToken{value: "identity-provider-access-token"},
 					identityTokenAudience:    "provider-audience",
+					identityTokenProxyURL:    "http://bifrost",
 					identityToken:            identityToken,
 				}),
 				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "bifrost"}),
@@ -892,6 +947,21 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "sa-proxy-token"},
 		},
 		{
+			name: "service account proxy URL has priority over default even if empty",
+			provider: mockProvider{
+				tokenProxyURL: "",
+				token:         &mockToken{value: "sa-proxy-token"},
+			},
+			opts: []bifröst.Option{
+				bifröst.WithServiceAccount(client.ObjectKey{
+					Name:      "empty-proxy-secret",
+					Namespace: "default",
+				}, kubeClient),
+				bifröst.WithDefaults(bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "default-proxy"})),
+			},
+			expectedToken: &mockToken{value: "sa-proxy-token"},
+		},
+		{
 			name: "proxy URL from default options",
 			provider: mockProvider{
 				defaultTokenProxyURL: "http://default-proxy",
@@ -949,6 +1019,7 @@ type mockProvider struct {
 	identityToken            string
 	identityTokenErr         bool
 	identityTokenAudience    string
+	identityTokenProxyURL    string
 	identityTokenAccessToken bifröst.Token
 }
 
@@ -989,17 +1060,17 @@ func (m *mockProvider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts
 
 func (m *mockProvider) NewDefaultAccessToken(ctx context.Context, opts ...bifröst.Option) (bifröst.Token, error) {
 
+	var o bifröst.Options
+	o.Apply(opts...)
+
 	// Check proxy URL.
-	if m.defaultTokenProxyURL != "" {
-		var o bifröst.Options
-		o.Apply(opts...)
-		if o.GetHTTPClient() == nil {
-			return nil, fmt.Errorf("expected HTTP client with proxy URL, got nil")
-		}
-		proxyURL, _ := o.GetHTTPClient().Transport.(*http.Transport).Proxy(nil)
-		if proxyURL.String() != m.defaultTokenProxyURL {
-			return nil, fmt.Errorf("expected proxy URL %q, got %q", m.defaultTokenProxyURL, proxyURL)
-		}
+	var proxyURL string
+	if hc := o.GetHTTPClient(); hc != nil {
+		u, _ := hc.Transport.(*http.Transport).Proxy(nil)
+		proxyURL = u.String()
+	}
+	if proxyURL != m.defaultTokenProxyURL {
+		return nil, fmt.Errorf("expected proxy URL %q, got %q", m.defaultTokenProxyURL, proxyURL)
 	}
 
 	return m.defaultToken, getError(m.defaultTokenErr)
@@ -1045,14 +1116,13 @@ func (m *mockProvider) NewAccessToken(ctx context.Context, identityToken string,
 	}
 
 	// Check proxy URL.
-	if m.tokenProxyURL != "" {
-		if o.GetHTTPClient() == nil {
-			return nil, fmt.Errorf("expected HTTP client with proxy URL, got nil")
-		}
-		proxyURL, _ := o.GetHTTPClient().Transport.(*http.Transport).Proxy(nil)
-		if proxyURL.String() != m.tokenProxyURL {
-			return nil, fmt.Errorf("expected proxy URL %q, got %q", m.tokenProxyURL, proxyURL)
-		}
+	var proxyURL string
+	if hc := o.GetHTTPClient(); hc != nil {
+		u, _ := hc.Transport.(*http.Transport).Proxy(nil)
+		proxyURL = u.String()
+	}
+	if proxyURL != m.tokenProxyURL {
+		return nil, fmt.Errorf("expected proxy URL %q, got %q", m.tokenProxyURL, proxyURL)
 	}
 
 	// Check prefer direct access.
@@ -1086,6 +1156,9 @@ func (m *mockProvider) NewRegistryLogin(ctx context.Context, containerRegistry s
 func (m *mockProvider) NewIdentityToken(ctx context.Context, accessToken bifröst.Token,
 	serviceAccount *corev1.ServiceAccount, audience string, opts ...bifröst.Option) (string, error) {
 
+	var o bifröst.Options
+	o.Apply(opts...)
+
 	// Check access token.
 	if m.identityTokenAccessToken != nil {
 		if accessToken.(*mockToken).value != m.identityTokenAccessToken.(*mockToken).value {
@@ -1102,6 +1175,16 @@ func (m *mockProvider) NewIdentityToken(ctx context.Context, accessToken bifrös
 	// Check audience.
 	if audience != m.identityTokenAudience {
 		return "", fmt.Errorf("expected audience %q, got %q", m.identityTokenAudience, audience)
+	}
+
+	// Check proxy URL.
+	var proxyURL string
+	if hc := o.GetHTTPClient(); hc != nil {
+		u, _ := hc.Transport.(*http.Transport).Proxy(nil)
+		proxyURL = u.String()
+	}
+	if proxyURL != m.identityTokenProxyURL {
+		return "", fmt.Errorf("expected proxy URL %q, got %q", m.identityTokenProxyURL, proxyURL)
 	}
 
 	return m.identityToken, getError(m.identityTokenErr)

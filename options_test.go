@@ -74,73 +74,81 @@ func TestWithSupportedIdentityProviders(t *testing.T) {
 }
 
 func TestWithProxyURL(t *testing.T) {
-	g := NewWithT(t)
-
-	var o bifröst.Options
-	bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "localhost"})(&o)
-
-	g.Expect(o.GetHTTPClient()).NotTo(BeNil())
-	g.Expect(o.GetHTTPClient().Transport).NotTo(BeNil())
-
-	transport := o.GetHTTPClient().Transport.(*http.Transport)
-	g.Expect(transport).NotTo(BeNil())
-
-	proxy := transport.Proxy
-	g.Expect(proxy).NotTo(BeNil())
-
-	proxyURL, err := proxy(nil)
-	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(proxyURL).NotTo(BeNil())
-	g.Expect(proxyURL.Scheme).To(Equal("http"))
-	g.Expect(proxyURL.Host).To(Equal("localhost"))
-
 	for _, tt := range []struct {
 		name             string
+		proxyURL         url.URL
 		reqURL           *url.URL
 		proxyURLExpected bool
 	}{
 		{
 			name:             "nil request URL",
+			proxyURL:         url.URL{Scheme: "http", Host: "localhost"},
+			reqURL:           nil,
 			proxyURLExpected: true,
 		},
 		{
-			name:             "some request URL",
+			name:             "example.com",
+			proxyURL:         url.URL{Scheme: "http", Host: "localhost"},
 			reqURL:           &url.URL{Host: "example.com"},
 			proxyURLExpected: true,
 		},
 		{
+			name:             "example.com when proxy URL is empty",
+			proxyURL:         url.URL{},
+			reqURL:           &url.URL{Host: "example.com"},
+			proxyURLExpected: false,
+		},
+		{
 			name:             "169.254.169.254",
+			proxyURL:         url.URL{Scheme: "http", Host: "localhost"},
 			reqURL:           &url.URL{Host: "169.254.169.254"},
 			proxyURLExpected: false,
 		},
 		{
 			name:             "169.254.0.0",
+			proxyURL:         url.URL{Scheme: "http", Host: "localhost"},
 			reqURL:           &url.URL{Host: "169.254.0.0"},
 			proxyURLExpected: false,
 		},
 		{
 			name:             "0.169.254.0",
+			proxyURL:         url.URL{Scheme: "http", Host: "localhost"},
 			reqURL:           &url.URL{Host: "0.169.254.0"},
 			proxyURLExpected: false,
 		},
 		{
 			name:             "0.0.169.254",
+			proxyURL:         url.URL{Scheme: "http", Host: "localhost"},
 			reqURL:           &url.URL{Host: "0.0.169.254"},
 			proxyURLExpected: false,
 		},
 		{
 			name:             "metadata.google.internal",
+			proxyURL:         url.URL{Scheme: "http", Host: "localhost"},
 			reqURL:           &url.URL{Host: "metadata.google.internal"},
 			proxyURLExpected: false,
 		},
 		{
 			name:             "metadata.google.internal.",
+			proxyURL:         url.URL{Scheme: "http", Host: "localhost"},
 			reqURL:           &url.URL{Host: "metadata.google.internal."},
 			proxyURLExpected: false,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
+
+			var o bifröst.Options
+			bifröst.WithProxyURL(tt.proxyURL)(&o)
+
+			g.Expect(o.GetHTTPClient()).NotTo(BeNil())
+			g.Expect(o.GetHTTPClient().Transport).NotTo(BeNil())
+
+			transport := o.GetHTTPClient().Transport.(*http.Transport)
+			g.Expect(transport).NotTo(BeNil())
+
+			proxy := transport.Proxy
+			g.Expect(proxy).NotTo(BeNil())
 
 			var req *http.Request
 			if tt.reqURL != nil {
@@ -149,7 +157,14 @@ func TestWithProxyURL(t *testing.T) {
 
 			proxyURL, err := proxy(req)
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(tt.proxyURLExpected).To(Equal(proxyURL != nil))
+
+			if !tt.proxyURLExpected {
+				g.Expect(proxyURL).To(BeNil())
+			} else {
+				g.Expect(proxyURL).NotTo(BeNil())
+				g.Expect(proxyURL.Scheme).To(Equal(tt.proxyURL.Scheme))
+				g.Expect(proxyURL.Host).To(Equal(tt.proxyURL.Host))
+			}
 		})
 	}
 }
@@ -159,8 +174,7 @@ func TestWithDefaults(t *testing.T) {
 
 	var o bifröst.Options
 	bifröst.WithDefaults(bifröst.WithAudience("test"))(&o)
-	g.Expect(o.Defaults).NotTo(BeNil())
-	g.Expect(o.Defaults.GetAudience(nil)).To(Equal("test"))
+	g.Expect(o.GetAudience(nil)).To(Equal("test"))
 }
 
 func TestOptions_Apply(t *testing.T) {
@@ -184,7 +198,6 @@ func TestOptions_Apply(t *testing.T) {
 
 			var o bifröst.Options
 			o.Apply(tt.opts...)
-			g.Expect(o.Defaults).NotTo(BeNil())
 			g.Expect(o.GetAudience(nil)).To(Equal(tt.expectedAudience))
 		})
 	}
@@ -193,12 +206,26 @@ func TestOptions_Apply(t *testing.T) {
 func TestOptions_ApplyProviderOptions(t *testing.T) {
 	g := NewWithT(t)
 
-	o := bifröst.Options{ProviderOptions: []bifröst.ProviderOption{func(obj any) {
+	var o bifröst.Options
+	o.Apply(bifröst.WithProviderOptions(func(obj any) {
 		*obj.(*int) = 42
-	}}}
+	}))
 
 	var x int
 	o.ApplyProviderOptions(&x)
+	g.Expect(x).To(Equal(42))
+}
+
+func TestOptions_ApplyDefaultProviderOptions(t *testing.T) {
+	g := NewWithT(t)
+
+	var o bifröst.Options
+	o.Apply(bifröst.WithDefaults(bifröst.WithProviderOptions(func(obj any) {
+		*obj.(*int) = 42
+	})))
+
+	var x int
+	o.ApplyDefaultProviderOptions(&x)
 	g.Expect(x).To(Equal(42))
 }
 

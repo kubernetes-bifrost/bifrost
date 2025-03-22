@@ -145,6 +145,23 @@ func TestProvider_BuildCacheKey(t *testing.T) {
 			expectedKey: "12a43f116254259fbdd60ddd88301d0880b1c272baf26095d16f1b52df27ac59",
 		},
 		{
+			name: "service account email from options has precedence over all other sources (even if empty)",
+			serviceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"iam.gke.io/gcp-service-account": "annotations@project-id.iam.gserviceaccount.com",
+					},
+				},
+			},
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(
+					gcp.WithServiceAccountEmail("")),
+				bifröst.WithDefaults(bifröst.WithProviderOptions(
+					gcp.WithServiceAccountEmail("defaults@project-id.iam.gserviceaccount.com"))),
+			},
+			expectedKey: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		},
+		{
 			name: "service account email from annotations has precedence over default",
 			serviceAccount: &corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
@@ -160,6 +177,21 @@ func TestProvider_BuildCacheKey(t *testing.T) {
 			expectedKey: "b6492b105bff1853007becdf3a7d255a1afcddd88c88f43f9a859f1ea2acb9af",
 		},
 		{
+			name: "service account email from annotations has precedence over default (even if empty)",
+			serviceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"iam.gke.io/gcp-service-account": "",
+					},
+				},
+			},
+			opts: []bifröst.Option{
+				bifröst.WithDefaults(bifröst.WithProviderOptions(
+					gcp.WithServiceAccountEmail("defaults@project-id.iam.gserviceaccount.com"))),
+			},
+			expectedKey: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		},
+		{
 			name:           "service account email from defaults",
 			serviceAccount: &corev1.ServiceAccount{},
 			opts: []bifröst.Option{
@@ -167,6 +199,15 @@ func TestProvider_BuildCacheKey(t *testing.T) {
 					gcp.WithServiceAccountEmail("defaults@project-id.iam.gserviceaccount.com"))),
 			},
 			expectedKey: "2706fe9436762ae74afafa0afb3fa170ff81e9485a0ac4cf90df56d2bb3331e8",
+		},
+		{
+			name:           "empty service account email from defaults",
+			serviceAccount: &corev1.ServiceAccount{},
+			opts: []bifröst.Option{
+				bifröst.WithDefaults(bifröst.WithProviderOptions(
+					gcp.WithServiceAccountEmail(""))),
+			},
+			expectedKey: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 		},
 		{
 			name: "invalid service account email",
