@@ -23,6 +23,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -30,24 +31,40 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 var rootCmdFlags struct {
+	LogLevel           string `json:"logLevel"`
 	KubeConfig         string `json:"kubeconfig"`
 	KubeContext        string `json:"context"`
 	KubeNamespace      string `json:"namespace"`
 	KubeServiceAccount string `json:"serviceAccountName"`
-	UnsafeDev          bool   `json:"unsafeDev"`
+	TLSCertFile        string `json:"tlsCertFile"`
+	TLSKeyFile         string `json:"tlsKeyFile"`
+	Insecure           bool   `json:"insecure"`
+
+	kubeServiceAccountToken string
+	kubeRESTConfig          *rest.Config
+	ctx                     context.Context
 }
 
-var kubeClient client.Client
+var acceptedLogLevels = func() string {
+	logLevels := make([]string, len(logrus.AllLevels))
+	for i, level := range logrus.AllLevels {
+		logLevels[i] = level.String()
+	}
+	return strings.Join(logLevels, ", ")
+}()
 
 func init() {
+	rootCmd.PersistentFlags().StringVar(&rootCmdFlags.LogLevel, "log-level", logrus.InfoLevel.String(),
+		fmt.Sprintf("Log level to use, one of: %s", acceptedLogLevels))
 	rootCmd.PersistentFlags().StringVar(&rootCmdFlags.KubeConfig, "kubeconfig",
 		filepath.Join(homedir.HomeDir(), ".kube", "config"),
 		"Path to the kubeconfig file")
@@ -55,8 +72,12 @@ func init() {
 		"Name of the kubeconfig context to use. Defaults to the current context in the kubeconfig file")
 	rootCmd.PersistentFlags().StringVarP(&rootCmdFlags.KubeNamespace, "namespace", "n", "",
 		"Kubernetes namespace to use. Defaults to the namespace of the context")
-	rootCmd.PersistentFlags().BoolVar(&rootCmdFlags.UnsafeDev, "unsafe-dev", false,
-		"Enable UNSAFE development mode (do not use outside of development!!! 💀)")
+	rootCmd.PersistentFlags().StringVar(&rootCmdFlags.TLSCertFile, "tls-cert-file", "/etc/bifrost/tls/tls.crt",
+		"Path to the TLS certificate file")
+	rootCmd.PersistentFlags().StringVar(&rootCmdFlags.TLSKeyFile, "tls-key-file", "/etc/bifrost/tls/tls.key",
+		"Path to the TLS key file")
+	rootCmd.PersistentFlags().BoolVar(&rootCmdFlags.Insecure, "insecure", false,
+		"Use insecure connections without TLS")
 }
 
 var rootCmd = &cobra.Command{
@@ -65,14 +86,22 @@ var rootCmd = &cobra.Command{
 by leveraging the Kubernetes built-in OpenID Connect (OIDC)
 token issuer for service accounts.`,
 	SilenceUsage: true,
-	PersistentPreRunE: func(*cobra.Command, []string) error {
-		conf, err := loadKubeConfig()
+	PersistentPreRunE: func(*cobra.Command, []string) (err error) {
+		// Parse the log level.
+		logLevel, err := logrus.ParseLevel(rootCmdFlags.LogLevel)
+		if err != nil {
+			return fmt.Errorf("invalid log level. accepted values: %s", acceptedLogLevels)
+		}
+
+		// Setup the logger and the root context.
+		logger, ctrlLogger := newLogger(logLevel, true /*root*/)
+		ctx := intoContext(ctrl.SetupSignalHandler(), logger)
+		rootCmdFlags.ctx = ctrl.LoggerInto(ctx, ctrlLogger)
+
+		// Load the kubeconfig.
+		rootCmdFlags.kubeRESTConfig, err = loadKubeConfig()
 		if err != nil {
 			return fmt.Errorf("failed to load kubeconfig: %w", err)
-		}
-		kubeClient, err = client.New(conf, client.Options{})
-		if err != nil {
-			return fmt.Errorf("failed to create controller-runtime client: %w", err)
 		}
 		return nil
 	},
@@ -95,13 +124,14 @@ func loadKubeConfig() (*rest.Config, error) {
 			rootCmdFlags.KubeNamespace = strings.TrimSpace(string(b))
 		}
 
-		// Read the service account name.
+		// Read the service account name from the token.
 		b, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
 		if err != nil {
 			return nil, fmt.Errorf("failed to read service account token: %w", err)
 		}
+		token := string(b)
 		var claims jwt.MapClaims
-		if _, _, err := jwt.NewParser().ParseUnverified(string(b), &claims); err != nil {
+		if _, _, err := jwt.NewParser().ParseUnverified(token, &claims); err != nil {
 			return nil, fmt.Errorf("failed to parse service account token: %w", err)
 		}
 		sub, err := claims.GetSubject()
@@ -110,6 +140,7 @@ func loadKubeConfig() (*rest.Config, error) {
 		}
 		parts := strings.Split(sub, ":")
 		rootCmdFlags.KubeServiceAccount = parts[len(parts)-1]
+		rootCmdFlags.kubeServiceAccountToken = token
 
 		return conf, nil
 	}
@@ -143,6 +174,5 @@ func loadKubeConfig() (*rest.Config, error) {
 			return nil, fmt.Errorf("failed to get namespace from kubeconfig: %w", err)
 		}
 	}
-	rootCmdFlags.KubeServiceAccount = "default"
 	return conf, nil
 }

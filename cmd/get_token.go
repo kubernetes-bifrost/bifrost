@@ -37,7 +37,11 @@ import (
 	"github.com/elazarl/goproxy"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"gopkg.in/yaml.v3"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
@@ -69,7 +73,7 @@ var getTokenCmdFlags struct {
 	preferDirectAccess bool
 
 	outputFormatter   func(any) error
-	serviceAccountRef *client.ObjectKey
+	serviceAccountObj *corev1.ServiceAccount
 	proxyURL          *url.URL
 
 	opts []bifröst.Option
@@ -104,11 +108,8 @@ func init() {
 var getTokenCmd = &cobra.Command{
 	Use:   "token",
 	Short: "Get a token for accessing resources on a cloud provider.",
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		parent := cmd.Parent()
-		if err := parent.PersistentPreRunE(parent, args); err != nil {
-			return err
-		}
+	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+		ctx := rootCmdFlags.ctx
 
 		// Parse output format.
 		switch getTokenCmdFlags.outputFormat {
@@ -158,17 +159,32 @@ Expires At: %[3]s (%[4]s)
 				allowedOutputFormats)
 		}
 
-		// Parse service account reference.
+		// Parse service account reference and create token if calling the gRPC endpoint.
+		var kubeClient client.Client
+		var serviceAccountRef *client.ObjectKey
+		var serviceAccountToken string
 		if getTokenCmdFlags.serviceAccount == "" {
 			getTokenCmdFlags.serviceAccount = rootCmdFlags.KubeServiceAccount
+			serviceAccountToken = rootCmdFlags.kubeServiceAccountToken
 		}
 		if getTokenCmdFlags.serviceAccount != "" {
 			if rootCmdFlags.KubeNamespace == "" {
-				return fmt.Errorf("namespace is required for service account reference")
+				return fmt.Errorf("namespace is required for using a kubernetes service account")
 			}
-			getTokenCmdFlags.serviceAccountRef = &client.ObjectKey{
+			serviceAccountRef = &client.ObjectKey{
 				Name:      getTokenCmdFlags.serviceAccount,
 				Namespace: rootCmdFlags.KubeNamespace,
+			}
+			var err error
+			kubeClient, err = client.New(rootCmdFlags.kubeRESTConfig, client.Options{})
+			if err != nil {
+				return fmt.Errorf("failed to create kubernetes client: %w", err)
+			}
+			if serviceAccountToken == "" && getTokenCmdFlags.grpcEndpoint != "" {
+				serviceAccountToken, err = getServiceAccountToken(ctx, kubeClient, serviceAccountRef)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
@@ -212,9 +228,9 @@ Expires At: %[3]s (%[4]s)
 		}
 
 		// Build options.
-		if getTokenCmdFlags.serviceAccountRef != nil {
+		if serviceAccountRef != nil {
 			getTokenCmdFlags.opts = append(getTokenCmdFlags.opts,
-				bifröst.WithServiceAccount(*getTokenCmdFlags.serviceAccountRef, kubeClient))
+				bifröst.WithServiceAccount(*serviceAccountRef, kubeClient))
 		}
 		if getTokenCmdFlags.audience != "" {
 			getTokenCmdFlags.opts = append(getTokenCmdFlags.opts,
@@ -239,12 +255,25 @@ Expires At: %[3]s (%[4]s)
 
 		// Create gRPC client.
 		if getTokenCmdFlags.grpcEndpoint != "" {
-			_, _, grpcCreds, _, err := getTLSConfig()
-			if err != nil {
-				return fmt.Errorf("failed to get TLS config: %w", err)
+			if serviceAccountToken == "" {
+				return fmt.Errorf("service account is required for gRPC endpoint")
+			}
+			var err error
+			transportCreds := insecure.NewCredentials()
+			if !rootCmdFlags.Insecure {
+				transportCreds, err = credentials.NewClientTLSFromFile(rootCmdFlags.TLSCertFile, "")
+				if err != nil {
+					return fmt.Errorf("failed to load gRPC TLS credentials: %w", err)
+				}
+			}
+			clientInterceptor := func(ctx context.Context, method string, req, reply any,
+				cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+				ctx = metadata.AppendToOutgoingContext(ctx, metadataKeyServiceAccountToken, serviceAccountToken)
+				return invoker(ctx, method, req, reply, cc, opts...)
 			}
 			getTokenCmdFlags.grpcClient, err = grpc.NewClient(getTokenCmdFlags.grpcEndpoint,
-				grpc.WithTransportCredentials(grpcCreds))
+				grpc.WithTransportCredentials(transportCreds),
+				grpc.WithUnaryInterceptor(clientInterceptor))
 			if err != nil {
 				return fmt.Errorf("failed to create gRPC client: %w", err)
 			}
@@ -258,6 +287,11 @@ Expires At: %[3]s (%[4]s)
 			defer cancel()
 			if err := getTokenCmdFlags.debugProxy.Shutdown(ctx); err != nil {
 				fmt.Fprintf(os.Stderr, "failed to stop debug proxy: %v\n", err)
+			}
+		}
+		if getTokenCmdFlags.grpcClient != nil {
+			if err := getTokenCmdFlags.grpcClient.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to close gRPC client: %v\n", err)
 			}
 		}
 	},
