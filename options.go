@@ -33,9 +33,6 @@ import (
 
 // Options contains the configuration options for getting a token.
 type Options struct {
-	ProviderOptions []ProviderOption
-	Defaults        *Options
-
 	cache                      Cache
 	client                     Client
 	serviceAccountRef          *client.ObjectKey
@@ -45,6 +42,8 @@ type Options struct {
 	httpClient                 *http.Client
 	containerRegistry          string
 	preferDirectAccess         bool
+	providerOptions            []ProviderOption
+	defaults                   *Options
 }
 
 // Option is a functional option for getting a token.
@@ -119,6 +118,9 @@ func WithSupportedIdentityProviders(providers ...IdentityProvider) Option {
 // Service (STS) of the cloud provider.
 func WithProxyURL(proxyURL url.URL) Option {
 	proxy := func(r *http.Request) (*url.URL, error) {
+		if proxyURL == (url.URL{}) {
+			return nil, nil
+		}
 		if r != nil {
 			h := r.URL.Hostname()
 			if strings.Contains(h, "169.254") || // All providers use link-local addresses for metadata services.
@@ -165,7 +167,7 @@ func WithPreferDirectAccess() Option {
 // WithProviderOptions sets the provider-specific options for getting a token.
 func WithProviderOptions(opts ...ProviderOption) Option {
 	return func(o *Options) {
-		o.ProviderOptions = append(o.ProviderOptions, opts...)
+		o.providerOptions = append(o.providerOptions, opts...)
 	}
 }
 
@@ -175,13 +177,13 @@ func WithDefaults(opts ...Option) Option {
 	return func(o *Options) {
 		var defaults Options
 		defaults.Apply(opts...)
-		o.Defaults = &defaults
+		o.defaults = &defaults
 	}
 }
 
 // Apply applies the given slice of Option(s) to the Options struct.
 func (o *Options) Apply(opts ...Option) {
-	o.Defaults = &Options{}
+	o.defaults = &Options{}
 	for _, opt := range opts {
 		opt(o)
 	}
@@ -190,7 +192,15 @@ func (o *Options) Apply(opts ...Option) {
 // ApplyProviderOptions applies the provider-specific options to the given
 // provider-specific options struct.
 func (o *Options) ApplyProviderOptions(opts any) {
-	for _, opt := range o.ProviderOptions {
+	for _, opt := range o.providerOptions {
+		opt(opts)
+	}
+}
+
+// ApplyDefaultProviderOptions applies the default provider-specific
+// options to the given provider-specific options struct.
+func (o *Options) ApplyDefaultProviderOptions(opts any) {
+	for _, opt := range o.defaults.providerOptions {
 		opt(opts)
 	}
 }
@@ -208,7 +218,7 @@ func (o *Options) GetAudience(serviceAccount *corev1.ServiceAccount) string {
 		}
 	}
 
-	return o.Defaults.audience
+	return o.defaults.audience
 }
 
 // GetIdentityProvider returns the configured identity provider. If WithIdentityProvider
@@ -232,7 +242,7 @@ func (o *Options) GetIdentityProvider(serviceAccount *corev1.ServiceAccount) Ide
 		}
 	}
 
-	if idp := o.Defaults.identityProvider; idp != nil {
+	if idp := o.defaults.identityProvider; idp != nil {
 		return *idp
 	}
 

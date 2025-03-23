@@ -30,27 +30,21 @@ import (
 	"google.golang.org/grpc"
 
 	awspb "github.com/kubernetes-bifrost/bifrost/grpc/aws/go"
-	aws "github.com/kubernetes-bifrost/bifrost/providers/aws"
 )
 
 type awsService struct {
-	aws.Provider
 	awspb.UnimplementedBifrostServer
 }
 
-func newAWSService() service {
-	return &awsService{}
+func (a awsService) register(server *grpc.Server) {
+	awspb.RegisterBifrostServer(server, a)
 }
 
-func (g *awsService) registerService(server *grpc.Server) {
-	awspb.RegisterBifrostServer(server, g)
-}
-
-func (*awsService) registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
+func (awsService) registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
 	return awspb.RegisterBifrostHandlerFromEndpoint(ctx, mux, endpoint, opts)
 }
 
-func (g *awsService) GetToken(ctx context.Context, req *awspb.GetTokenRequest) (*awspb.GetTokenResponse, error) {
+func (awsService) GetToken(ctx context.Context, req *awspb.GetTokenRequest) (*awspb.GetTokenResponse, error) {
 	fmt.Println("yahoo aws!", req.GetValue())
 	return &awspb.GetTokenResponse{}, nil
 }

@@ -21,8 +21,6 @@ require (
 	github.com/kubernetes-bifrost/bifrost/grpc/aws/go v0.14.0
 	github.com/kubernetes-bifrost/bifrost/grpc/azure/go v0.14.0
 	github.com/kubernetes-bifrost/bifrost/grpc/gcp/go v0.14.0
-	github.com/kubernetes-bifrost/bifrost/providers/aws v0.14.0
-	github.com/kubernetes-bifrost/bifrost/providers/azure v0.14.0
 	github.com/kubernetes-bifrost/bifrost/providers/gcp v0.14.0
 	github.com/prometheus/client_golang v1.21.1
 	github.com/sirupsen/logrus v1.9.3

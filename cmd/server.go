@@ -52,28 +52,39 @@ import (
 )
 
 type service interface {
-	registerService(server *grpc.Server)
+	register(server *grpc.Server)
 	registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error
 }
 
-var services = []func() service{
-	newAWSService,
-	newAzureService,
-	newGCPService,
+var services = []service{
+	awsService{},
+	azureService{},
+	gcpService{},
 }
 
 var serverCmdFlags struct {
-	Port      int `json:"port"`
-	LocalPort int `json:"localPort"`
+	port            int
+	localPort       int
+	cacheSyncPeriod time.Duration
+}
+
+func serverCmdFlagsToMap() map[string]any {
+	return map[string]any{
+		"port":            serverCmdFlags.port,
+		"localPort":       serverCmdFlags.localPort,
+		"cacheSyncPeriod": serverCmdFlags.cacheSyncPeriod.String(),
+	}
 }
 
 func init() {
 	rootCmd.AddCommand(serverCmd)
 
-	serverCmd.Flags().IntVar(&serverCmdFlags.Port, "port", 8080,
+	serverCmd.Flags().IntVar(&serverCmdFlags.port, "port", 8080,
 		"Port to listen on")
-	serverCmd.Flags().IntVar(&serverCmdFlags.LocalPort, "local-port", 8081,
+	serverCmd.Flags().IntVar(&serverCmdFlags.localPort, "local-port", 8081,
 		"Port to listen on over plain HTTP for local traffic from gRPC gateway")
+	serverCmd.Flags().DurationVar(&serverCmdFlags.cacheSyncPeriod, "cache-sync-period", 10*time.Minute,
+		"The period with which the Kubernetes cache is synced. Minimum of 10m and maximum of 1h.")
 
 	bindGKEMetadataServerFlag(serverCmd)
 }
@@ -97,7 +108,7 @@ spec.internalTrafficPolicy set to Local to direct traffic to the
 server only from pods running on the same node.
 `,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		localAddr := fmt.Sprintf("localhost:%d", serverCmdFlags.LocalPort)
+		localAddr := fmt.Sprintf("localhost:%d", serverCmdFlags.localPort)
 
 		// Get context and logger.
 		ctx := rootCmdFlags.ctx
@@ -143,10 +154,9 @@ server only from pods running on the same node.
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithUnaryInterceptor(gatewayInterceptor),
 		}
-		for _, newService := range services {
-			s := newService()
-			s.registerService(grpcServer)
-			if err := s.registerGateway(ctx, gwMux, localAddr, gwDialOpts); err != nil {
+		for _, service := range services {
+			service.register(grpcServer)
+			if err := service.registerGateway(ctx, gwMux, localAddr, gwDialOpts); err != nil {
 				return err
 			}
 		}
@@ -184,7 +194,7 @@ server only from pods running on the same node.
 
 		// Start the server.
 		server := &http.Server{
-			Addr:     fmt.Sprintf(":%d", serverCmdFlags.Port),
+			Addr:     fmt.Sprintf(":%d", serverCmdFlags.port),
 			Handler:  h2c.NewHandler(handler, &http2.Server{}),
 			ErrorLog: httpLogger,
 		}
@@ -195,7 +205,7 @@ server only from pods running on the same node.
 		}
 		logger.
 			WithField("rootFlags", rootCmdFlags).
-			WithField("serverFlags", serverCmdFlags).
+			WithField("serverFlags", serverCmdFlagsToMap()).
 			Info("server started")
 		go func() {
 			if err := localServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -215,9 +225,9 @@ server only from pods running on the same node.
 			}
 		}()
 
-		// Wait for termination signal and shutdown the server.
+		// Wait for termination signal and shutdown the servers.
 		<-ctx.Done()
-		logger.Info("signal received, shutting down server")
+		logger.Info("signal received, shutting down")
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(ctx); err != nil {
@@ -232,7 +242,16 @@ server only from pods running on the same node.
 }
 
 func newServerKubeClient(ctx context.Context) (client.Client, error) {
-	cache, err := cache.New(rootCmdFlags.kubeRESTConfig, cache.Options{})
+	syncPeriod := serverCmdFlags.cacheSyncPeriod
+	if syncPeriod < 10*time.Minute {
+		return nil, fmt.Errorf("cache sync period must be at least 10m")
+	}
+	if syncPeriod > time.Hour {
+		return nil, fmt.Errorf("cache sync period must be at most 1h")
+	}
+	cache, err := cache.New(rootCmdFlags.kubeRESTConfig, cache.Options{
+		SyncPeriod: &syncPeriod,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes cache: %w", err)
 	}

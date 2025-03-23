@@ -237,23 +237,18 @@ func callGCPService(ctx context.Context) error {
 // ============
 
 type gcpService struct {
-	gcp.Provider
 	gcppb.UnimplementedBifrostServer
 }
 
-func newGCPService() service {
-	return &gcpService{}
-}
-
-func (g *gcpService) registerService(server *grpc.Server) {
+func (g gcpService) register(server *grpc.Server) {
 	gcppb.RegisterBifrostServer(server, g)
 }
 
-func (*gcpService) registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
+func (gcpService) registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
 	return gcppb.RegisterBifrostHandlerFromEndpoint(ctx, mux, endpoint, opts)
 }
 
-func (g *gcpService) GetToken(ctx context.Context, req *gcppb.GetTokenRequest) (*gcppb.GetTokenResponse, error) {
+func (gcpService) GetToken(ctx context.Context, req *gcppb.GetTokenRequest) (*gcppb.GetTokenResponse, error) {
 	fmt.Println("yahoo gcp!", req.GetValue())
 	return &gcppb.GetTokenResponse{}, nil
 }

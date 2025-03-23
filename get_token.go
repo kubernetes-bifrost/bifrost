@@ -30,6 +30,7 @@ import (
 
 	authnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -53,10 +54,16 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 	var providerAudience, identityProviderAudience string
 	var identityProvider IdentityProvider
 	var proxyURL *url.URL
-	if o.serviceAccountRef != nil {
+	serviceAccountRef := o.serviceAccountRef
+	client := o.client
+	if serviceAccountRef == nil {
+		serviceAccountRef = o.defaults.serviceAccountRef
+		client = o.defaults.client
+	}
+	if serviceAccountRef != nil && *serviceAccountRef != (types.NamespacedName{}) {
 		// Get service account and prepare a function to create a token for it.
 		serviceAccount = &corev1.ServiceAccount{}
-		if err := o.client.Get(ctx, *o.serviceAccountRef, serviceAccount); err != nil {
+		if err := client.Get(ctx, *serviceAccountRef, serviceAccount); err != nil {
 			return nil, fmt.Errorf("failed to get service account: %w", err)
 		}
 
@@ -74,7 +81,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 		// for the final cloud provider access token. Initially, this function will
 		// create token for the configured service account audience.
 		newIdentityToken := func() (string, error) {
-			return newServiceAccountToken(ctx, o.client, serviceAccount, providerAudience)
+			return newServiceAccountToken(ctx, client, serviceAccount, providerAudience)
 		}
 
 		// If an intermediary identity provider is configured, update the function
@@ -87,7 +94,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 			}
 
 			newIdentityToken = func() (string, error) {
-				return newIdentityTokenFromProvider(ctx, identityProvider, o.client, serviceAccount,
+				return newIdentityTokenFromProvider(ctx, identityProvider, client, serviceAccount,
 					providerAudience, identityProviderAudience, proxyURL, &o)
 			}
 		}
@@ -127,7 +134,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 	}
 
 	// Get proxy URL considering all sources and update options accordingly.
-	proxyURL, err := getProxyURL(ctx, serviceAccount, &o)
+	proxyURL, err := getProxyURL(ctx, serviceAccount, client, &o)
 	if err != nil {
 		return nil, err
 	}
@@ -179,11 +186,11 @@ func newIdentityTokenFromProvider(ctx context.Context, identityProvider Identity
 	if proxyURL != nil {
 		opts = append(opts, WithProxyURL(*proxyURL))
 	}
-	if len(o.ProviderOptions) > 0 {
-		opts = append(opts, WithProviderOptions(o.ProviderOptions...))
+	if len(o.providerOptions) > 0 {
+		opts = append(opts, WithProviderOptions(o.providerOptions...))
 	}
-	if len(o.Defaults.ProviderOptions) > 0 {
-		opts = append(opts, WithDefaults(WithProviderOptions(o.Defaults.ProviderOptions...)))
+	if len(o.defaults.providerOptions) > 0 {
+		opts = append(opts, WithDefaults(WithProviderOptions(o.defaults.providerOptions...)))
 	}
 
 	// Create access token.
@@ -203,60 +210,68 @@ func newIdentityTokenFromProvider(ctx context.Context, identityProvider Identity
 	return identityToken, nil
 }
 
-func urlFromClient(hc *http.Client) *url.URL {
-	if hc == nil {
-		return nil
-	}
+func getProxyURL(ctx context.Context,
+	serviceAccount *corev1.ServiceAccount,
+	c Client, o *Options) (*url.URL, error) {
 
-	proxyURL, _ := hc.Transport.(*http.Transport).Proxy(nil)
-	return proxyURL
-}
-
-func getProxyURL(ctx context.Context, serviceAccount *corev1.ServiceAccount, o *Options) (*url.URL, error) {
-	// o.HTTPClient takes precedence over everything else
+	// Main option takes precedence over everything else.
 	if hc := o.httpClient; hc != nil {
-		return urlFromClient(hc), nil
+		proxyURL, _ := hc.Transport.(*http.Transport).Proxy(nil)
+		return proxyURL, nil
 	}
 
-	// If a proxy secret is not set in service account, return the default
-	if serviceAccount == nil || serviceAccount.Annotations[ServiceAccountProxySecretName] == "" {
-		return urlFromClient(o.Defaults.httpClient), nil
-	}
+	// If a proxy secret is set in the service account, fetch the secret and retrieve the proxy URL from it.
+	if serviceAccount != nil {
+		if secretName, ok := serviceAccount.Annotations[ServiceAccountProxySecretName]; ok {
+			// Bail out early if secret name is empty.
+			if secretName == "" {
+				return nil, nil
+			}
 
-	// Fetch proxy secret.
-	secretRef := client.ObjectKey{
-		Name:      serviceAccount.Annotations[ServiceAccountProxySecretName],
-		Namespace: serviceAccount.Namespace,
-	}
-	secret := &corev1.Secret{}
-	if err := o.client.Get(ctx, secretRef, secret); err != nil {
-		return nil, fmt.Errorf("failed to get proxy secret from service account annotation: %w", err)
-	}
+			// Fetch proxy secret.
+			secretRef := client.ObjectKey{
+				Name:      secretName,
+				Namespace: serviceAccount.Namespace,
+			}
+			secret := &corev1.Secret{}
+			if err := c.Get(ctx, secretRef, secret); err != nil {
+				return nil, fmt.Errorf("failed to get proxy secret from service account annotation: %w", err)
+			}
 
-	// Parse proxy address.
-	address := string(secret.Data[ProxySecretKeyAddress])
-	if address == "" {
-		return nil, fmt.Errorf("invalid proxy secret: field '%s' is missing", ProxySecretKeyAddress)
-	}
-	proxyURL, err := url.Parse(address)
-	if err != nil {
-		return nil, fmt.Errorf("invalid proxy secret: failed to parse address: %w", err)
-	}
+			// Parse proxy address.
+			address := string(secret.Data[ProxySecretKeyAddress])
+			if address == "" {
+				return nil, fmt.Errorf("invalid proxy secret: field '%s' is missing", ProxySecretKeyAddress)
+			}
+			proxyURL, err := url.Parse(address)
+			if err != nil {
+				return nil, fmt.Errorf("invalid proxy secret: failed to parse address: %w", err)
+			}
 
-	// Parse proxy username and password.
-	if username := string(secret.Data[ProxySecretKeyUsername]); username != "" {
-		password := string(secret.Data[ProxySecretKeyPassword])
-		if password == "" {
-			return nil, fmt.Errorf("invalid proxy secret: field '%s' is required when '%s' is set",
-				ProxySecretKeyPassword, ProxySecretKeyUsername)
+			// Parse proxy username and password.
+			if username := string(secret.Data[ProxySecretKeyUsername]); username != "" {
+				password := string(secret.Data[ProxySecretKeyPassword])
+				if password == "" {
+					return nil, fmt.Errorf("invalid proxy secret: field '%s' is required when '%s' is set",
+						ProxySecretKeyPassword, ProxySecretKeyUsername)
+				}
+				proxyURL.User = url.UserPassword(username, password)
+			} else if password := string(secret.Data[ProxySecretKeyPassword]); password != "" {
+				return nil, fmt.Errorf("invalid proxy secret: field '%s' is required when '%s' is set",
+					ProxySecretKeyUsername, ProxySecretKeyPassword)
+			}
+
+			return proxyURL, nil
 		}
-		proxyURL.User = url.UserPassword(username, password)
-	} else if password := string(secret.Data[ProxySecretKeyPassword]); password != "" {
-		return nil, fmt.Errorf("invalid proxy secret: field '%s' is required when '%s' is set",
-			ProxySecretKeyUsername, ProxySecretKeyPassword)
 	}
 
-	return proxyURL, nil
+	// If a proxy secret is not set in the service account, return the default.
+	if hc := o.defaults.httpClient; hc != nil {
+		proxyURL, _ := hc.Transport.(*http.Transport).Proxy(nil)
+		return proxyURL, nil
+	}
+
+	return nil, nil
 }
 
 func buildCacheKey(provider, identityProvider Provider, providerAudience, identityProviderAudience string,

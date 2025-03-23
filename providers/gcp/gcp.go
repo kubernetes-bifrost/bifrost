@@ -65,7 +65,7 @@ const (
 )
 
 type options struct {
-	serviceAccountEmail string
+	serviceAccountEmail *string
 	impl                implProvider
 }
 
@@ -73,7 +73,7 @@ type options struct {
 func WithServiceAccountEmail(email string) bifröst.ProviderOption {
 	return func(po any) {
 		if o, ok := po.(*options); ok {
-			o.serviceAccountEmail = email
+			o.serviceAccountEmail = &email
 		}
 	}
 }
@@ -289,8 +289,8 @@ func serviceAccountEmail(serviceAccount *corev1.ServiceAccount, o *bifröst.Opti
 func uncheckedServiceAccountEmail(serviceAccount *corev1.ServiceAccount, o *bifröst.Options) string {
 	var po options
 	o.ApplyProviderOptions(&po)
-	if e := po.serviceAccountEmail; e != "" {
-		return e
+	if e := po.serviceAccountEmail; e != nil {
+		return *e
 	}
 
 	if e, ok := serviceAccount.Annotations[GKEServiceAccountAnnotation]; ok {
@@ -298,8 +298,12 @@ func uncheckedServiceAccountEmail(serviceAccount *corev1.ServiceAccount, o *bifr
 	}
 
 	var defaults options
-	o.Defaults.ApplyProviderOptions(&defaults)
-	return defaults.serviceAccountEmail
+	o.ApplyDefaultProviderOptions(&defaults)
+	if e := defaults.serviceAccountEmail; e != nil {
+		return *e
+	}
+
+	return ""
 }
 
 // GKEMetadata holds the GKE cluster metadata.
