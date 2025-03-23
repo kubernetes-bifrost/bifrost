@@ -128,7 +128,7 @@ func TestProvider_BuildCacheKey(t *testing.T) {
 			expectedKey: "d074533cbc96a9bfd144cfb644a368e4d930a30ef07e85e1ab644f05f478676e",
 		},
 		{
-			name: "service account email from options has precedence over all other sources",
+			name: "service account email from options has precedence over kubernetes service account annotations",
 			serviceAccount: &corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -139,13 +139,11 @@ func TestProvider_BuildCacheKey(t *testing.T) {
 			opts: []bifröst.Option{
 				bifröst.WithProviderOptions(
 					gcp.WithServiceAccountEmail("opts@project-id.iam.gserviceaccount.com")),
-				bifröst.WithDefaults(bifröst.WithProviderOptions(
-					gcp.WithServiceAccountEmail("defaults@project-id.iam.gserviceaccount.com"))),
 			},
 			expectedKey: "12a43f116254259fbdd60ddd88301d0880b1c272baf26095d16f1b52df27ac59",
 		},
 		{
-			name: "service account email from options has precedence over all other sources (even if empty)",
+			name: "service account email from options has precedence over kubernetes service account annotations (even if empty)",
 			serviceAccount: &corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -156,13 +154,11 @@ func TestProvider_BuildCacheKey(t *testing.T) {
 			opts: []bifröst.Option{
 				bifröst.WithProviderOptions(
 					gcp.WithServiceAccountEmail("")),
-				bifröst.WithDefaults(bifröst.WithProviderOptions(
-					gcp.WithServiceAccountEmail("defaults@project-id.iam.gserviceaccount.com"))),
 			},
 			expectedKey: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 		},
 		{
-			name: "service account email from annotations has precedence over default",
+			name: "service account email from annotations",
 			serviceAccount: &corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -170,44 +166,7 @@ func TestProvider_BuildCacheKey(t *testing.T) {
 					},
 				},
 			},
-			opts: []bifröst.Option{
-				bifröst.WithDefaults(bifröst.WithProviderOptions(
-					gcp.WithServiceAccountEmail("defaults@project-id.iam.gserviceaccount.com"))),
-			},
 			expectedKey: "b6492b105bff1853007becdf3a7d255a1afcddd88c88f43f9a859f1ea2acb9af",
-		},
-		{
-			name: "service account email from annotations has precedence over default (even if empty)",
-			serviceAccount: &corev1.ServiceAccount{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						"iam.gke.io/gcp-service-account": "",
-					},
-				},
-			},
-			opts: []bifröst.Option{
-				bifröst.WithDefaults(bifröst.WithProviderOptions(
-					gcp.WithServiceAccountEmail("defaults@project-id.iam.gserviceaccount.com"))),
-			},
-			expectedKey: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-		},
-		{
-			name:           "service account email from defaults",
-			serviceAccount: &corev1.ServiceAccount{},
-			opts: []bifröst.Option{
-				bifröst.WithDefaults(bifröst.WithProviderOptions(
-					gcp.WithServiceAccountEmail("defaults@project-id.iam.gserviceaccount.com"))),
-			},
-			expectedKey: "2706fe9436762ae74afafa0afb3fa170ff81e9485a0ac4cf90df56d2bb3331e8",
-		},
-		{
-			name:           "empty service account email from defaults",
-			serviceAccount: &corev1.ServiceAccount{},
-			opts: []bifröst.Option{
-				bifröst.WithDefaults(bifröst.WithProviderOptions(
-					gcp.WithServiceAccountEmail(""))),
-			},
-			expectedKey: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 		},
 		{
 			name: "invalid service account email",
@@ -541,30 +500,57 @@ func TestGKEMetadata_GetAudience(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 
-		projectIDErr bool
-		locationErr  bool
-		nameErr      bool
+		clusterProjectID    string
+		clusterLocation     string
+		clusterName         string
+		clusterProjectIDErr bool
+		clusterLocationErr  bool
+		clusterNameErr      bool
 
 		expectedAudience string
 		expectedErr      string
 	}{
 		{
-			name:         "error on loading cluster project ID",
-			projectIDErr: true,
-			expectedErr:  "failed to get GKE cluster project ID from the metadata service: metadata: GCE metadata \"project/project-id\" not defined",
+			name:                "error on loading cluster project ID",
+			clusterProjectIDErr: true,
+			expectedErr:         "failed to get GKE cluster project ID from the metadata service: metadata: GCE metadata \"project/project-id\" not defined",
 		},
 		{
-			name:        "error on loading cluster location",
-			locationErr: true,
-			expectedErr: "failed to get GKE cluster location from the metadata service: metadata: GCE metadata \"instance/attributes/cluster-location\" not defined",
+			name:               "error on loading cluster location",
+			clusterProjectID:   "gke-project-id",
+			clusterLocationErr: true,
+			expectedErr:        "failed to get GKE cluster location from the metadata service: metadata: GCE metadata \"instance/attributes/cluster-location\" not defined",
 		},
 		{
-			name:        "error on loading cluster name",
-			nameErr:     true,
-			expectedErr: "failed to get GKE cluster name from the metadata service: metadata: GCE metadata \"instance/attributes/cluster-name\" not defined",
+			name:             "error on loading cluster name",
+			clusterProjectID: "gke-project-id",
+			clusterLocation:  "gke-location",
+			clusterNameErr:   true,
+			expectedErr:      "failed to get GKE cluster name from the metadata service: metadata: GCE metadata \"instance/attributes/cluster-name\" not defined",
+		},
+		{
+			name:             "error due to empty cluster project ID",
+			clusterProjectID: "",
+			expectedErr:      "failed to get GKE cluster project ID from the metadata service: empty value",
+		},
+		{
+			name:             "error due to empty cluster location",
+			clusterProjectID: "gke-project-id",
+			clusterLocation:  "",
+			expectedErr:      "failed to get GKE cluster location from the metadata service: empty value",
+		},
+		{
+			name:             "error due to empty cluster name",
+			clusterProjectID: "gke-project-id",
+			clusterLocation:  "gke-location",
+			clusterName:      "",
+			expectedErr:      "failed to get GKE cluster name from the metadata service: empty value",
 		},
 		{
 			name:             "success",
+			clusterProjectID: "gke-project-id",
+			clusterLocation:  "gke-location",
+			clusterName:      "gke-name",
 			expectedAudience: "identitynamespace:gke-project-id.svc.id.goog:https://container.googleapis.com/v1/projects/gke-project-id/locations/gke-location/clusters/gke-name",
 		},
 	} {
@@ -572,12 +558,12 @@ func TestGKEMetadata_GetAudience(t *testing.T) {
 			g := NewWithT(t)
 
 			(&gkeMetadataServer{
-				projectID:    "gke-project-id",
-				location:     "gke-location",
-				name:         "gke-name",
-				projectIDErr: tt.projectIDErr,
-				locationErr:  tt.locationErr,
-				nameErr:      tt.nameErr,
+				projectID:    tt.clusterProjectID,
+				location:     tt.clusterLocation,
+				name:         tt.clusterName,
+				projectIDErr: tt.clusterProjectIDErr,
+				locationErr:  tt.clusterLocationErr,
+				nameErr:      tt.clusterNameErr,
 			}).start(t)
 
 			audience, err := (&gcp.GKEMetadata{}).GetAudience(context.Background())

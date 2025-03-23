@@ -33,6 +33,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -55,23 +56,24 @@ func newLogger(level logrus.Level, root bool) (logrus.FieldLogger, logr.Logger) 
 
 	if root {
 		ctrl.SetLogger(cl)
+		klog.SetLogger(cl)
 	}
 
 	return l, cl
 }
 
-func fromContext(ctx context.Context) logrus.FieldLogger {
+func fromContext(ctx context.Context) *logrus.FieldLogger {
 	if v := ctx.Value(loggerContextKey{}); v != nil {
-		if l, ok := v.(logrus.FieldLogger); ok && l != nil {
+		if l, ok := v.(*logrus.FieldLogger); ok && l != nil {
 			return l
 		}
 	}
 	l, _ := newLogger(logLevel, false /*root*/)
-	return l
+	return &l
 }
 
 func intoContext(ctx context.Context, l logrus.FieldLogger) context.Context {
-	return context.WithValue(ctx, loggerContextKey{}, l)
+	return context.WithValue(ctx, loggerContextKey{}, &l)
 }
 
 // ================

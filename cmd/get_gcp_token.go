@@ -48,6 +48,7 @@ import (
 var getGCPTokenCmdFlags struct {
 	serviceAccountEmail string
 	idTokenAudience     string
+	gkeMetadata         string
 }
 
 func init() {
@@ -58,7 +59,7 @@ func init() {
 	getGCPTokenCmd.Flags().StringVar(&getGCPTokenCmdFlags.idTokenAudience, "id-token-audience", "",
 		"The audience for an ID token (gets an ID token instead of an access token)")
 
-	bindGKEMetadataServerFlag(getGCPTokenCmd)
+	bindGKEMetadataServerFlag(getGCPTokenCmd, &getGCPTokenCmdFlags.gkeMetadata)
 }
 
 var getGCPTokenCmd = &cobra.Command{
@@ -79,8 +80,8 @@ var getGCPTokenCmd = &cobra.Command{
 			}
 		}
 
-		if gkeMetadataServerFlag != "" {
-			close, err := startGKEMetadataServer()
+		if md := getGCPTokenCmdFlags.gkeMetadata; md != "" {
+			close, err := startGKEMetadataServer(md)
 			if err != nil {
 				return fmt.Errorf("failed to start GKE metadata server: %w", err)
 			}
@@ -257,18 +258,16 @@ func (gcpService) GetToken(ctx context.Context, req *gcppb.GetTokenRequest) (*gc
 // GKE metadata server
 // ===================
 
-var gkeMetadataServerFlag string
-
-func bindGKEMetadataServerFlag(cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&gkeMetadataServerFlag, "gke-metadata", "g", "",
+func bindGKEMetadataServerFlag(cmd *cobra.Command, gkeMetadata *string) {
+	cmd.Flags().StringVarP(gkeMetadata, "gke-metadata", "g", "",
 		"The GKE metadata to use for token retrieval in the format cluster-project-id/cluster-location/cluster-name")
 }
 
-func startGKEMetadataServer() (func() error, error) {
-	md := strings.Split(gkeMetadataServerFlag, "/")
+func startGKEMetadataServer(gkeMetadata string) (func() error, error) {
+	md := strings.Split(gkeMetadata, "/")
 	if len(md) != 3 {
 		return nil, fmt.Errorf("invalid GKE metadata: '%s'. format: cluster-project-id/cluster-location/cluster-name",
-			gkeMetadataServerFlag)
+			gkeMetadata)
 	}
 	projectID, location, name := md[0], md[1], md[2]
 
@@ -294,11 +293,14 @@ func startGKEMetadataServer() (func() error, error) {
 		Handler: handler,
 	}
 
+	ch := make(chan struct{})
 	go func() {
+		close(ch)
 		if err := s.Serve(lis); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			panic(err)
 		}
 	}()
+	<-ch
 
 	os.Setenv("GCE_METADATA_HOST", addr)
 

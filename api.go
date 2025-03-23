@@ -34,11 +34,6 @@ const (
 	// ServiceAccountTokenSecretName is the annotation key for the name of the secret
 	// containing a proxy address, username and password for using when issuing access tokens.
 	ServiceAccountProxySecretName = APIGroupServiceAccounts + "/proxySecretName"
-	// ServiceAccountIdentityProvider is the annotation key for the intermediary identity provider
-	// the service account should use first to get an intermediate impersonation token before
-	// impersonating the final identity on the target cloud provider owning the resources the
-	// service account wants to access.
-	ServiceAccountIdentityProvider = APIGroupServiceAccounts + "/identityProvider"
 
 	// ProxySecretKeyAddress is the key containing the proxy address in the secret.
 	ProxySecretKeyAddress = "address"

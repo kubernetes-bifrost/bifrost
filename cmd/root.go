@@ -47,7 +47,8 @@ var rootCmdFlags struct {
 	KubeServiceAccount string `json:"serviceAccountName"`
 	TLSCertFile        string `json:"tlsCertFile"`
 	TLSKeyFile         string `json:"tlsKeyFile"`
-	Insecure           bool   `json:"insecure"`
+	TLSCAFile          string `json:"tlsCAFile"`
+	DisableTLS         bool   `json:"disableTLS"`
 
 	kubeServiceAccountToken string
 	kubeRESTConfig          *rest.Config
@@ -76,8 +77,10 @@ func init() {
 		"Path to the TLS certificate file")
 	rootCmd.PersistentFlags().StringVar(&rootCmdFlags.TLSKeyFile, "tls-key-file", "/etc/bifrost/tls/tls.key",
 		"Path to the TLS key file")
-	rootCmd.PersistentFlags().BoolVar(&rootCmdFlags.Insecure, "insecure", false,
-		"Use insecure connections without TLS")
+	rootCmd.PersistentFlags().StringVar(&rootCmdFlags.TLSCAFile, "tls-ca-file", "/etc/bifrost/tls/ca.crt",
+		"Path to the TLS CA file")
+	rootCmd.PersistentFlags().BoolVar(&rootCmdFlags.DisableTLS, "disable-tls", false,
+		"Disable TLS")
 }
 
 var rootCmd = &cobra.Command{
