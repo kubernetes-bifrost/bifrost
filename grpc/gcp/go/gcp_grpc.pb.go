@@ -41,7 +41,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Bifrost_GetToken_FullMethodName = "/gcp.v1.Bifrost/GetToken"
+	Bifrost_GetToken_FullMethodName                  = "/gcp.v1.Bifrost/GetToken"
+	Bifrost_GetContainerRegistryLogin_FullMethodName = "/gcp.v1.Bifrost/GetContainerRegistryLogin"
 )
 
 // BifrostClient is the client API for Bifrost service.
@@ -49,6 +50,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type BifrostClient interface {
 	GetToken(ctx context.Context, in *GetTokenRequest, opts ...grpc.CallOption) (*GetTokenResponse, error)
+	GetContainerRegistryLogin(ctx context.Context, in *GetContainerRegistryLoginRequest, opts ...grpc.CallOption) (*ContainerRegistryLogin, error)
 }
 
 type bifrostClient struct {
@@ -69,11 +71,22 @@ func (c *bifrostClient) GetToken(ctx context.Context, in *GetTokenRequest, opts 
 	return out, nil
 }
 
+func (c *bifrostClient) GetContainerRegistryLogin(ctx context.Context, in *GetContainerRegistryLoginRequest, opts ...grpc.CallOption) (*ContainerRegistryLogin, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContainerRegistryLogin)
+	err := c.cc.Invoke(ctx, Bifrost_GetContainerRegistryLogin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BifrostServer is the server API for Bifrost service.
 // All implementations must embed UnimplementedBifrostServer
 // for forward compatibility.
 type BifrostServer interface {
 	GetToken(context.Context, *GetTokenRequest) (*GetTokenResponse, error)
+	GetContainerRegistryLogin(context.Context, *GetContainerRegistryLoginRequest) (*ContainerRegistryLogin, error)
 	mustEmbedUnimplementedBifrostServer()
 }
 
@@ -86,6 +99,9 @@ type UnimplementedBifrostServer struct{}
 
 func (UnimplementedBifrostServer) GetToken(context.Context, *GetTokenRequest) (*GetTokenResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetToken not implemented")
+}
+func (UnimplementedBifrostServer) GetContainerRegistryLogin(context.Context, *GetContainerRegistryLoginRequest) (*ContainerRegistryLogin, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetContainerRegistryLogin not implemented")
 }
 func (UnimplementedBifrostServer) mustEmbedUnimplementedBifrostServer() {}
 func (UnimplementedBifrostServer) testEmbeddedByValue()                 {}
@@ -126,6 +142,24 @@ func _Bifrost_GetToken_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Bifrost_GetContainerRegistryLogin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetContainerRegistryLoginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BifrostServer).GetContainerRegistryLogin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Bifrost_GetContainerRegistryLogin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BifrostServer).GetContainerRegistryLogin(ctx, req.(*GetContainerRegistryLoginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Bifrost_ServiceDesc is the grpc.ServiceDesc for Bifrost service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -136,6 +170,10 @@ var Bifrost_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetToken",
 			Handler:    _Bifrost_GetToken_Handler,
+		},
+		{
+			MethodName: "GetContainerRegistryLogin",
+			Handler:    _Bifrost_GetContainerRegistryLogin_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

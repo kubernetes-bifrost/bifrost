@@ -21,10 +21,14 @@
 // SOFTWARE.
 
 message GetTokenRequest {
-	string value = 1;
-	Options options = 2;
+	string workloadIdentityProvider = 1;
+	string serviceAccountEmail = 2;
 }
 
 message GetTokenResponse {
-	string value = 1;
+	string access_token = 1;
+	string token_type = 2;
+	string refresh_token = 3;
+	google.protobuf.Timestamp expiry = 4;
+	int64 expires_in = 5;
 }

@@ -62,6 +62,9 @@ const (
 
 	// ServiceAccountEmailPattern is the pattern for GCP service account emails.
 	ServiceAccountEmailPattern = `^[a-zA-Z0-9-]+@[a-zA-Z0-9-]+\.iam\.gserviceaccount\.com$`
+
+	// WorkloadIdentityProviderPattern is the pattern for GCP workload identity providers.
+	WorkloadIdentityProviderPattern = `^projects/(\d+)/locations/global/workloadIdentityPools/([^/]+)/providers/[^/]+$`
 )
 
 type options struct {
@@ -337,6 +340,9 @@ func (g *GKEMetadata) load(ctx context.Context) error {
 	}
 
 	client := metadata.NewClient(nil)
+
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
 
 	projectID, err := client.GetWithContext(ctx, "project/project-id")
 	if err != nil {

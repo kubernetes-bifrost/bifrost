@@ -35,11 +35,17 @@ service Bifrost {
 			get: "/v1/PROVIDER/token"
 		};
 	}
+
+	rpc GetContainerRegistryLogin(GetContainerRegistryLoginRequest) returns (ContainerRegistryLogin) {
+		option (google.api.http) = {
+			get: "/v1/PROVIDER/registry"
+		};
+	};
 }
 
-message Options {
-	string key = 1;
-	string value = 2;
+message GetContainerRegistryLoginRequest {
+	GetTokenRequest token_request = 1;
+	string registry = 2;
 }
 
 message ContainerRegistryLogin {

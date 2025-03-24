@@ -35,105 +35,81 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/spf13/cobra"
+	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
 	gcppb "github.com/kubernetes-bifrost/bifrost/grpc/gcp/go"
 	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 )
 
+var (
+	gcpWorkloadIdentityProviderRegex = regexp.MustCompile(gcp.WorkloadIdentityProviderPattern)
+	gcpServiceAccountEmailRegex      = regexp.MustCompile(gcp.ServiceAccountEmailPattern)
+)
+
 var getGCPTokenCmdFlags struct {
-	serviceAccountEmail string
-	idTokenAudience     string
-	gkeMetadata         string
+	workloadIdentityProvider string
+	serviceAccountEmail      string
 }
 
 func init() {
 	getTokenCmd.AddCommand(getGCPTokenCmd)
 
+	getGCPTokenCmd.Flags().StringVarP(&getGCPTokenCmdFlags.workloadIdentityProvider, "workload-identity-provider", "w", "",
+		"The workload identity provider for using as audience for the service account token")
 	getGCPTokenCmd.Flags().StringVarP(&getGCPTokenCmdFlags.serviceAccountEmail, "service-account-email", "e", "",
 		"The email of the GCP service account to impersonate")
-	getGCPTokenCmd.Flags().StringVar(&getGCPTokenCmdFlags.idTokenAudience, "id-token-audience", "",
-		"The audience for an ID token (gets an ID token instead of an access token)")
-
-	bindGKEMetadataServerFlag(getGCPTokenCmd, &getGCPTokenCmdFlags.gkeMetadata)
 }
 
 var getGCPTokenCmd = &cobra.Command{
-	Use:   "gcp",
+	Use:   gcp.ProviderName,
 	Short: "Get a token for accessing resources on GCP.",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx := rootCmdFlags.ctx
 
+		if aud := getGCPTokenCmdFlags.workloadIdentityProvider; aud != "" {
+			if !gcpWorkloadIdentityProviderRegex.MatchString(aud) {
+				return fmt.Errorf("invalid GCP workload identity provider: '%s'. must match %s",
+					aud, gcp.WorkloadIdentityProviderPattern)
+			}
+		}
+
+		if email := getGCPTokenCmdFlags.serviceAccountEmail; email != "" {
+			if !gcpServiceAccountEmailRegex.MatchString(email) {
+				return fmt.Errorf("invalid GCP service account email: '%s'. must match %s",
+					email, gcp.ServiceAccountEmailPattern)
+			}
+		}
+
+		var token bifröst.Token
+		var err error
 		if getTokenCmdFlags.grpcEndpoint != "" {
-			return callGCPService(ctx)
+			token, err = callGCPService(ctx)
+		} else {
+			token, err = issueGCPToken(ctx)
 		}
-
-		if getGCPTokenCmdFlags.serviceAccountEmail != "" {
-			regex := regexp.MustCompile(gcp.ServiceAccountEmailPattern)
-			if !regex.MatchString(getGCPTokenCmdFlags.serviceAccountEmail) {
-				return fmt.Errorf("invalid GCP service account email: '%s'",
-					getGCPTokenCmdFlags.serviceAccountEmail)
-			}
-		}
-
-		if md := getGCPTokenCmdFlags.gkeMetadata; md != "" {
-			close, err := startGKEMetadataServer(md)
-			if err != nil {
-				return fmt.Errorf("failed to start GKE metadata server: %w", err)
-			}
-			defer close()
-		}
-
-		if getGCPTokenCmdFlags.serviceAccountEmail != "" {
-			getTokenCmdFlags.opts = append(getTokenCmdFlags.opts,
-				bifröst.WithProviderOptions(gcp.WithServiceAccountEmail(getGCPTokenCmdFlags.serviceAccountEmail)))
-		}
-
-		if getGCPTokenCmdFlags.idTokenAudience != "" {
-			getTokenCmdFlags.opts = append(getTokenCmdFlags.opts,
-				bifröst.WithPreferDirectAccess())
-		}
-
-		token, err := bifröst.GetToken(ctx, gcp.Provider{}, getTokenCmdFlags.opts...)
 		if err != nil {
-			return fmt.Errorf("failed to issue GCP access token: %w", err)
+			return err
 		}
 
-		if getTokenCmdFlags.outputFormatter != nil && getGCPTokenCmdFlags.idTokenAudience == "" {
+		if getTokenCmdFlags.outputFormatter != nil {
 			return getTokenCmdFlags.outputFormatter(token)
 		}
 
-		rawOutput := token.(*gcp.Token).AccessToken
-		if getGCPTokenCmdFlags.idTokenAudience != "" {
-			serviceAccount := getTokenCmdFlags.serviceAccountObj
-			if serviceAccount == nil {
-				return fmt.Errorf("a kubernetes service account is required for issuing a GCP ID token")
-			}
-			idToken, err := gcp.Provider{}.NewIdentityToken(ctx, token, serviceAccount,
-				getGCPTokenCmdFlags.idTokenAudience, getTokenCmdFlags.opts...)
-			if err != nil {
-				return fmt.Errorf("failed to issue GCP ID token: %w", err)
-			}
-			rawOutput = idToken
-			if getTokenCmdFlags.outputFormatter != nil {
-				return getTokenCmdFlags.outputFormatter(idToken)
-			}
-		}
+		gcpToken := token.(*gcp.Token)
 
 		if getTokenCmdFlags.outputFormat == outputFormatRaw {
-			fmt.Println(rawOutput)
+			fmt.Println(gcpToken.AccessToken)
 			return nil
 		}
 
-		if getGCPTokenCmdFlags.idTokenAudience != "" {
-			return printIDToken(rawOutput)
-		}
-
-		return printAccesstoken(ctx, token.(*gcp.Token))
+		return printAccesstoken(ctx, gcpToken)
 	},
 }
 
@@ -181,56 +157,63 @@ Expires At:   %[2]s (%[3]s)
 	return nil
 }
 
-func printIDToken(token string) error {
-	claims := jwt.MapClaims{}
-	if _, _, err := jwt.NewParser().ParseUnverified(token, claims); err != nil {
-		return fmt.Errorf("failed to parse ID token: %w", err)
+func issueGCPToken(ctx context.Context) (bifröst.Token, error) {
+	opts := getTokenCmdFlags.opts
+
+	if aud := getGCPTokenCmdFlags.workloadIdentityProvider; aud != "" {
+		opts = append(opts, bifröst.WithAudience(aud))
 	}
-	exp, err := claims.GetExpirationTime()
+
+	if email := getGCPTokenCmdFlags.serviceAccountEmail; email != "" {
+		opts = append(opts, bifröst.WithProviderOptions(gcp.WithServiceAccountEmail(email)))
+	}
+
+	token, err := bifröst.GetToken(ctx, gcp.Provider{}, opts...)
 	if err != nil {
-		return fmt.Errorf("failed to get expiration time: %w", err)
+		return nil, fmt.Errorf("failed to issue GCP access token: %w", err)
 	}
-	fmt.Printf(`ID Token:     %[1]s
-Expires At:   %[2]s (%[3]s)
-`,
-		token,
-		exp.Time.Format(time.RFC3339),
-		time.Until(exp.Time).String())
-
-	if getTokenCmdFlags.outputFormat == outputFormatReflect {
-		iss, err := claims.GetIssuer()
-		if err != nil {
-			return fmt.Errorf("failed to get issuer: %w", err)
-		}
-		aud, err := claims.GetAudience()
-		if err != nil {
-			return fmt.Errorf("failed to get audience: %w", err)
-		}
-		email := claims["email"].(string)
-		fmt.Printf(`Issuer:       %[1]s
-Audience:     %[2]s
-Email:        %[3]s
-`,
-			iss,
-			aud[0],
-			email)
-	}
-
-	return nil
+	return token, nil
 }
 
-func callGCPService(ctx context.Context) error {
+func callGCPService(ctx context.Context) (bifröst.Token, error) {
 	client := gcppb.NewBifrostClient(getTokenCmdFlags.grpcClient)
 
-	resp, err := client.GetToken(ctx, &gcppb.GetTokenRequest{
-		Value: "foobarbaz",
-	})
-	if err != nil {
-		return err
-	}
-	fmt.Println(resp)
+	tokenReq := &gcppb.GetTokenRequest{}
 
-	return nil
+	if aud := getGCPTokenCmdFlags.workloadIdentityProvider; aud != "" {
+		tokenReq.WorkloadIdentityProvider = aud
+	}
+
+	if email := getGCPTokenCmdFlags.serviceAccountEmail; email != "" {
+		tokenReq.ServiceAccountEmail = email
+	}
+
+	if registry := getTokenCmdFlags.containerRegistry; registry != "" {
+		resp, err := client.GetContainerRegistryLogin(ctx, &gcppb.GetContainerRegistryLoginRequest{
+			TokenRequest: tokenReq,
+			Registry:     registry,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get GCP container registry login: %w", err)
+		}
+		return &bifröst.ContainerRegistryLogin{
+			Username:  resp.Username,
+			Password:  resp.Password,
+			ExpiresAt: resp.ExpiresAt.AsTime(),
+		}, nil
+	}
+
+	resp, err := client.GetToken(ctx, tokenReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get GCP access token: %w", err)
+	}
+	return &gcp.Token{Token: oauth2.Token{
+		AccessToken:  resp.AccessToken,
+		TokenType:    resp.TokenType,
+		RefreshToken: resp.RefreshToken,
+		Expiry:       resp.Expiry.AsTime(),
+		ExpiresIn:    resp.ExpiresIn,
+	}}, nil
 }
 
 // ============
@@ -250,18 +233,75 @@ func (gcpService) registerGateway(ctx context.Context, mux *runtime.ServeMux, en
 }
 
 func (gcpService) GetToken(ctx context.Context, req *gcppb.GetTokenRequest) (*gcppb.GetTokenResponse, error) {
-	fmt.Println("yahoo gcp!", req.GetValue())
-	return &gcppb.GetTokenResponse{}, nil
+	opts, err := getGCPOptions(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	token, err := bifröst.GetToken(ctx, gcp.Provider{}, opts...)
+	if err != nil {
+		return nil, err
+	}
+	gcpToken := token.(*gcp.Token)
+
+	return &gcppb.GetTokenResponse{
+		AccessToken:  gcpToken.AccessToken,
+		TokenType:    gcpToken.TokenType,
+		RefreshToken: gcpToken.RefreshToken,
+		Expiry:       timestamppb.New(gcpToken.Expiry),
+		ExpiresIn:    gcpToken.ExpiresIn,
+	}, nil
+}
+
+func (gcpService) GetContainerRegistryLogin(ctx context.Context,
+	req *gcppb.GetContainerRegistryLoginRequest) (*gcppb.ContainerRegistryLogin, error) {
+
+	opts, err := getGCPOptions(ctx, req.GetTokenRequest())
+	if err != nil {
+		return nil, err
+	}
+	opts = append(opts, bifröst.WithContainerRegistry(req.GetRegistry()))
+
+	token, err := bifröst.GetToken(ctx, gcp.Provider{}, opts...)
+	if err != nil {
+		return nil, err
+	}
+	login := token.(*bifröst.ContainerRegistryLogin)
+
+	return &gcppb.ContainerRegistryLogin{
+		Username:  login.Username,
+		Password:  login.Password,
+		ExpiresAt: timestamppb.New(login.ExpiresAt),
+	}, nil
+}
+
+func getGCPOptions(ctx context.Context, req *gcppb.GetTokenRequest) ([]bifröst.Option, error) {
+	opts := optionsFromContext(ctx)
+
+	if aud := req.GetWorkloadIdentityProvider(); aud != "" {
+		if !gcpWorkloadIdentityProviderRegex.MatchString(aud) {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"invalid GCP workload identity provider: '%s'. must match %s",
+				aud, gcp.WorkloadIdentityProviderPattern)
+		}
+		opts = append(opts, bifröst.WithAudience(aud))
+	}
+
+	if email := req.GetServiceAccountEmail(); email != "" {
+		if !gcpServiceAccountEmailRegex.MatchString(email) {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"invalid GCP service account email: '%s'. must match %s",
+				email, gcp.ServiceAccountEmailPattern)
+		}
+		opts = append(opts, bifröst.WithProviderOptions(gcp.WithServiceAccountEmail(email)))
+	}
+
+	return opts, nil
 }
 
 // ===================
 // GKE metadata server
 // ===================
-
-func bindGKEMetadataServerFlag(cmd *cobra.Command, gkeMetadata *string) {
-	cmd.Flags().StringVarP(gkeMetadata, "gke-metadata", "g", "",
-		"The GKE metadata to use for token retrieval in the format cluster-project-id/cluster-location/cluster-name")
-}
 
 func startGKEMetadataServer(gkeMetadata string) (func() error, error) {
 	md := strings.Split(gkeMetadata, "/")

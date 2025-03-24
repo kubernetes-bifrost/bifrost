@@ -57,4 +57,5 @@ run: bin/bifrost
 		--log-level=debug \
 		--tls-cert-file=cmd/testdata/tls.crt \
 		--tls-key-file=cmd/testdata/tls.key \
-		--tls-ca-file=cmd/testdata/tls.crt
+		--tls-ca-file=cmd/testdata/tls.crt \
+		--gke-metadata=flux-gitops-playground/us-central1/autopilot-cluster-1
