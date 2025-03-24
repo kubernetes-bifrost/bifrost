@@ -18,12 +18,12 @@ require (
 	github.com/go-logr/logr v1.4.2
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3
-	github.com/kubernetes-bifrost/bifrost v0.15.0
-	github.com/kubernetes-bifrost/bifrost/grpc/aws/go v0.15.0
-	github.com/kubernetes-bifrost/bifrost/grpc/azure/go v0.15.0
-	github.com/kubernetes-bifrost/bifrost/grpc/bifrost/go v0.15.0
-	github.com/kubernetes-bifrost/bifrost/grpc/gcp/go v0.15.0
-	github.com/kubernetes-bifrost/bifrost/providers/gcp v0.15.0
+	github.com/kubernetes-bifrost/bifrost v0.16.0
+	github.com/kubernetes-bifrost/bifrost/grpc/aws/go v0.16.0
+	github.com/kubernetes-bifrost/bifrost/grpc/azure/go v0.16.0
+	github.com/kubernetes-bifrost/bifrost/grpc/bifrost/go v0.16.0
+	github.com/kubernetes-bifrost/bifrost/grpc/gcp/go v0.16.0
+	github.com/kubernetes-bifrost/bifrost/providers/gcp v0.16.0
 	github.com/prometheus/client_golang v1.21.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
