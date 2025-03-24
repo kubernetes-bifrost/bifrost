@@ -114,7 +114,7 @@ func (Provider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...bif
 	}
 
 	if o.GetContainerRegistry() != "" {
-		keyParts = append(keyParts, "containerRegistryKey=gcp")
+		keyParts = append(keyParts, fmt.Sprintf("containerRegistryKey=%s", ProviderName))
 	}
 
 	return bifröst.BuildCacheKeyFromParts(keyParts...), nil
