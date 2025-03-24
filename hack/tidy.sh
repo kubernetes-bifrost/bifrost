@@ -34,6 +34,18 @@ go mod tidy
 go tool github.com/bufbuild/buf/cmd/buf dep update
 cd -
 
+# gRPC proto for main service.
+cd grpc/bifrost
+find ../ -maxdepth 1 -type f -exec cp {} . \;
+rm bifrost.proto.tpl
+go tool github.com/bufbuild/buf/cmd/buf generate
+cd -
+
+# gRPC gen for main service.
+cd grpc/bifrost/go
+go mod tidy
+cd -
+
 # Providers.
 for provider_path in providers/*; do
     provider=$(basename $provider_path)

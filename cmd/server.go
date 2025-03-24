@@ -113,6 +113,7 @@ type service interface {
 }
 
 var services = []service{
+	bifrostService{},
 	awsService{},
 	azureService{},
 	gcpService{},
@@ -381,13 +382,11 @@ func newServerObservabilityInterceptor(latencySecs *prometheus.SummaryVec,
 			Observe(latency.Seconds())
 
 		// Log non-OK requests.
-		l := (*logger).WithField("latency", logrus.Fields{
-			"human":   latency.String(),
-			"seconds": latency.Seconds(),
-		})
-		if statusCode == codes.OK {
-			l.Info("token issued")
-		} else {
+		if statusCode != codes.OK {
+			l := (*logger).WithField("latency", logrus.Fields{
+				"human":   latency.String(),
+				"seconds": latency.Seconds(),
+			})
 			grpcStatusToLogger(statusText, statusObject, l, err).
 				WithError(err).Error("error handling request")
 		}
@@ -445,6 +444,9 @@ func getGatewayMetadata(ctx context.Context, req *http.Request) metadata.MD {
 
 func gatewayInterceptor(ctx context.Context, method string, req, reply any,
 	cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	if strings.HasPrefix(method, "/bifrost.") {
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
 	md, ok := metadata.FromOutgoingContext(ctx)
 	if !ok {
 		return status.Error(codes.Unauthenticated, "metadata is missing")
@@ -545,6 +547,10 @@ func newServerOptionsInterceptor(c client.Client, cache bifröst.Cache,
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler) (resp any, err error) {
 
+		if _, ok := info.Server.(bifrostService); ok {
+			return handler(ctx, req)
+		}
+
 		serviceAccountRef, err := extractServiceAccountRef(ctx, c)
 		if err != nil {
 			return nil, err
@@ -584,8 +590,8 @@ func newServerOptionsInterceptor(c client.Client, cache bifröst.Cache,
 
 		// The only identity provider we support is GCP. If the requested
 		// acces token is for GCP, then using GCP as the identity provider
-		// is not necessary.
-		if strings.HasPrefix(info.FullMethod, "/"+gcp.ProviderName+".") {
+		// is not necessary/does not make sense.
+		if _, ok := info.Server.(gcpService); ok {
 			opts = append(opts, bifröst.WithIdentityProvider(nil))
 		}
 

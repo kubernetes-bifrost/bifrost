@@ -23,24 +23,28 @@
 package main
 
 import (
-	_ "embed"
-	"os"
+	"context"
 
-	"github.com/spf13/cobra"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"google.golang.org/grpc"
+
+	bifröstpb "github.com/kubernetes-bifrost/bifrost/grpc/bifrost/go"
 )
 
-//go:embed version.txt
-var version string
+type bifrostService struct {
+	bifröstpb.UnimplementedBifrostServer
+}
 
-func main() {
-	// This makes cobra run all PersistentPreRuns in the natural order.
-	// Honestly, should be the default behavior.
-	// Refs:
-	// - https://github.com/spf13/cobra/issues/252
-	// - https://github.com/spf13/cobra/pull/2044/files
-	cobra.EnableTraverseRunHooks = true
+func (b bifrostService) register(server *grpc.Server) {
+	bifröstpb.RegisterBifrostServer(server, b)
+}
 
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
-	}
+func (bifrostService) registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
+	return bifröstpb.RegisterBifrostHandlerFromEndpoint(ctx, mux, endpoint, opts)
+}
+
+func (bifrostService) GetVersion(context.Context, *bifröstpb.GetVersionRequest) (*bifröstpb.GetVersionResponse, error) {
+	return &bifröstpb.GetVersionResponse{
+		Version: version,
+	}, nil
 }

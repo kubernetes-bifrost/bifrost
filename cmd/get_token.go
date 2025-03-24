@@ -37,8 +37,6 @@ import (
 	"github.com/elazarl/goproxy"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
@@ -258,13 +256,9 @@ Expires At: %[3]s (%[4]s)
 			if serviceAccountToken == "" {
 				return fmt.Errorf("service account is required for gRPC endpoint")
 			}
-			var err error
-			transportCreds := insecure.NewCredentials()
-			if !rootCmdFlags.DisableTLS {
-				transportCreds, err = credentials.NewClientTLSFromFile(rootCmdFlags.TLSCAFile, "")
-				if err != nil {
-					return fmt.Errorf("failed to load gRPC TLS credentials: %w", err)
-				}
+			transportCreds, err := getClientTransportCreds()
+			if err != nil {
+				return err
 			}
 			clientInterceptor := func(ctx context.Context, method string, req, reply any,
 				cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {

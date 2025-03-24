@@ -20,27 +20,25 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package main
+syntax = "proto3";
 
-import (
-	_ "embed"
-	"os"
+package bifrost.v1;
 
-	"github.com/spf13/cobra"
-)
+option go_package = "github.com/kubernetes-bifrost/bifrost/grpc/bifrost;bifröstpb";
 
-//go:embed version.txt
-var version string
+import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
 
-func main() {
-	// This makes cobra run all PersistentPreRuns in the natural order.
-	// Honestly, should be the default behavior.
-	// Refs:
-	// - https://github.com/spf13/cobra/issues/252
-	// - https://github.com/spf13/cobra/pull/2044/files
-	cobra.EnableTraverseRunHooks = true
-
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
+service Bifrost {
+	rpc GetVersion (GetVersionRequest) returns (GetVersionResponse) {
+		option (google.api.http) = {
+			get: "/v1/version"
+		};
 	}
+}
+
+message GetVersionRequest {}
+
+message GetVersionResponse {
+	string version = 1;
 }
