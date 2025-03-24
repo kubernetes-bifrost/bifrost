@@ -33,17 +33,16 @@ import (
 
 // Options contains the configuration options for getting a token.
 type Options struct {
-	cache                      Cache
-	client                     Client
-	serviceAccountRef          *client.ObjectKey
-	audience                   string
-	identityProvider           *IdentityProvider
-	supportedIdentityProviders []IdentityProvider
-	httpClient                 *http.Client
-	containerRegistry          string
-	preferDirectAccess         bool
-	providerOptions            []ProviderOption
-	defaults                   *Options
+	cache              Cache
+	client             Client
+	serviceAccountRef  *client.ObjectKey
+	audience           string
+	defaultAudience    string
+	identityProvider   IdentityProvider
+	httpClient         *http.Client
+	containerRegistry  string
+	preferDirectAccess bool
+	providerOptions    []ProviderOption
 }
 
 // Option is a functional option for getting a token.
@@ -72,12 +71,22 @@ func WithServiceAccount(serviceAccountRef client.ObjectKey, client Client) Optio
 
 // WithAudience sets the audience for which Kubernetes service account tokens
 // are issued. This is an identifier that will let the cloud provider know for
-// resources, domain or scopes the exchanged access token should be for. Each
-// cloud provider defines its own audience values, some define fixed values
-// and others define values that can be specific to the cluster.
+// which resources, domain or scopes the exchanged access token should be for.
+// Each cloud provider defines its own audience values, some define fixed
+// values while others define values that can be specific to the cluster.
+// If this option is not specified, the audience will be taken from the
+// service account annotation. If the annotation is not set, the audience
+// will be taken from the default audience.
 func WithAudience(audience string) Option {
 	return func(o *Options) {
 		o.audience = audience
+	}
+}
+
+// WithDefaultAudience sets the default audience for getting the access token.
+func WithDefaultAudience(audience string) Option {
+	return func(o *Options) {
+		o.defaultAudience = audience
 	}
 }
 
@@ -98,18 +107,7 @@ func WithAudience(audience string) Option {
 // Passing a nil provider disables the use of an identity provider.
 func WithIdentityProvider(provider IdentityProvider) Option {
 	return func(o *Options) {
-		o.identityProvider = &provider
-	}
-}
-
-// WithSupportedIdentityProviders allows registering identity providers to
-// be chosen from the service account annotation. If the service account
-// annotation is not set, then no identity provider is used. If
-// WithIdentityProvider is set, it takes precedence over the service account
-// annotation.
-func WithSupportedIdentityProviders(providers ...IdentityProvider) Option {
-	return func(o *Options) {
-		o.supportedIdentityProviders = append(o.supportedIdentityProviders, providers...)
+		o.identityProvider = provider
 	}
 }
 
@@ -171,19 +169,8 @@ func WithProviderOptions(opts ...ProviderOption) Option {
 	}
 }
 
-// WithDefaults sets the default options for getting a token.
-// Not all options support defaults.
-func WithDefaults(opts ...Option) Option {
-	return func(o *Options) {
-		var defaults Options
-		defaults.Apply(opts...)
-		o.defaults = &defaults
-	}
-}
-
 // Apply applies the given slice of Option(s) to the Options struct.
 func (o *Options) Apply(opts ...Option) {
-	o.defaults = &Options{}
 	for _, opt := range opts {
 		opt(o)
 	}
@@ -197,16 +184,7 @@ func (o *Options) ApplyProviderOptions(opts any) {
 	}
 }
 
-// ApplyDefaultProviderOptions applies the default provider-specific
-// options to the given provider-specific options struct.
-func (o *Options) ApplyDefaultProviderOptions(opts any) {
-	for _, opt := range o.defaults.providerOptions {
-		opt(opts)
-	}
-}
-
-// GetAudience returns the configured audience taking into account the
-// service account annotation.
+// GetAudience returns the configured audience for getting the access token.
 func (o *Options) GetAudience(serviceAccount *corev1.ServiceAccount) string {
 	if aud := o.audience; aud != "" {
 		return aud
@@ -218,50 +196,22 @@ func (o *Options) GetAudience(serviceAccount *corev1.ServiceAccount) string {
 		}
 	}
 
-	return o.defaults.audience
+	return o.defaultAudience
 }
 
-// GetIdentityProvider returns the configured identity provider. If WithIdentityProvider
-// is set, it takes precedence over the service account annotation. If not set, the
-// service account annotation is used to choose among the supported identity providers
-// set with WithSupportedIdentityProviders. If none match, nil is returned. If the
-// annotation is not set, the default identity provider is returned.
-func (o *Options) GetIdentityProvider(serviceAccount *corev1.ServiceAccount) IdentityProvider {
-	if o.identityProvider != nil {
-		return *o.identityProvider
-	}
-
-	if serviceAccount != nil {
-		if providerName, ok := serviceAccount.Annotations[ServiceAccountIdentityProvider]; ok {
-			for _, provider := range o.supportedIdentityProviders {
-				if provider.GetName() == providerName {
-					return provider
-				}
-			}
-			return nil
-		}
-	}
-
-	if idp := o.defaults.identityProvider; idp != nil {
-		return *idp
-	}
-
-	return nil
+// GetIdentityProvider returns the configured identity provider.
+func (o *Options) GetIdentityProvider() IdentityProvider {
+	return o.identityProvider
 }
 
 // GetHTTPClient returns the HTTP client for getting the token.
 func (o *Options) GetHTTPClient() *http.Client {
-	// GetToken resolves the HTTP client from the options
-	// and from the service account (which may contain a
-	// reference to a proxy secret).
 	return o.httpClient
 }
 
 // GetContainerRegistry returns the container registry host for
 // getting the token.
 func (o *Options) GetContainerRegistry() string {
-	// Container registries should not be set on the service account
-	// nor on the defaults. It's a per-request option.
 	return o.containerRegistry
 }
 

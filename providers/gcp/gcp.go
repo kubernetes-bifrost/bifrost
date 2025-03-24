@@ -276,34 +276,21 @@ func (Provider) NewIdentityToken(ctx context.Context, accessToken bifröst.Token
 var serviceAccountEmailRegex = regexp.MustCompile(ServiceAccountEmailPattern)
 
 func serviceAccountEmail(serviceAccount *corev1.ServiceAccount, o *bifröst.Options) (string, error) {
-	e := uncheckedServiceAccountEmail(serviceAccount, o)
-	if e == "" {
-		return "", nil
-	}
-	if !serviceAccountEmailRegex.MatchString(e) {
-		return "", fmt.Errorf("invalid GCP service account email: '%s'", e)
-	}
-	return e, nil
-}
-
-func uncheckedServiceAccountEmail(serviceAccount *corev1.ServiceAccount, o *bifröst.Options) string {
 	var po options
 	o.ApplyProviderOptions(&po)
+	var email string
 	if e := po.serviceAccountEmail; e != nil {
-		return *e
+		email = *e
+	} else if serviceAccount != nil {
+		email = serviceAccount.Annotations[GKEServiceAccountAnnotation]
 	}
-
-	if e, ok := serviceAccount.Annotations[GKEServiceAccountAnnotation]; ok {
-		return e
+	if email == "" {
+		return "", nil
 	}
-
-	var defaults options
-	o.ApplyDefaultProviderOptions(&defaults)
-	if e := defaults.serviceAccountEmail; e != nil {
-		return *e
+	if !serviceAccountEmailRegex.MatchString(email) {
+		return "", fmt.Errorf("invalid GCP service account email: '%s'", email)
 	}
-
-	return ""
+	return email, nil
 }
 
 // GKEMetadata holds the GKE cluster metadata.
@@ -355,15 +342,24 @@ func (g *GKEMetadata) load(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get GKE cluster project ID from the metadata service: %w", err)
 	}
+	if projectID == "" {
+		return fmt.Errorf("failed to get GKE cluster project ID from the metadata service: empty value")
+	}
 
 	location, err := client.GetWithContext(ctx, "instance/attributes/cluster-location")
 	if err != nil {
 		return fmt.Errorf("failed to get GKE cluster location from the metadata service: %w", err)
 	}
+	if location == "" {
+		return fmt.Errorf("failed to get GKE cluster location from the metadata service: empty value")
+	}
 
 	name, err := client.GetWithContext(ctx, "instance/attributes/cluster-name")
 	if err != nil {
 		return fmt.Errorf("failed to get GKE cluster name from the metadata service: %w", err)
+	}
+	if name == "" {
+		return fmt.Errorf("failed to get GKE cluster name from the metadata service: empty value")
 	}
 
 	g.projectID = projectID

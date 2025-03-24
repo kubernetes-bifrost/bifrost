@@ -53,4 +53,8 @@ bin/bifrost: bin
 
 .PHONY: run
 run: bin/bifrost
-	./bin/bifrost server --tls-cert-file=cmd/testdata/tls.crt --tls-key-file=cmd/testdata/tls.key --log-level=debug
+	./bin/bifrost server \
+		--log-level=debug \
+		--tls-cert-file=cmd/testdata/tls.crt \
+		--tls-key-file=cmd/testdata/tls.key \
+		--tls-ca-file=cmd/testdata/tls.crt

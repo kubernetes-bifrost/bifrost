@@ -260,8 +260,8 @@ Expires At: %[3]s (%[4]s)
 			}
 			var err error
 			transportCreds := insecure.NewCredentials()
-			if !rootCmdFlags.Insecure {
-				transportCreds, err = credentials.NewClientTLSFromFile(rootCmdFlags.TLSCertFile, "")
+			if !rootCmdFlags.DisableTLS {
+				transportCreds, err = credentials.NewClientTLSFromFile(rootCmdFlags.TLSCAFile, "")
 				if err != nil {
 					return fmt.Errorf("failed to load gRPC TLS credentials: %w", err)
 				}

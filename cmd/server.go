@@ -28,10 +28,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	bifröst "github.com/kubernetes-bifrost/bifrost"
+	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -51,29 +55,29 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type service interface {
-	register(server *grpc.Server)
-	registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error
-}
-
-var services = []service{
-	awsService{},
-	azureService{},
-	gcpService{},
-}
-
 var serverCmdFlags struct {
-	port            int
-	localPort       int
-	cacheSyncPeriod time.Duration
+	port                  int
+	localPort             int
+	objectCacheSyncPeriod time.Duration
+	defaultAudience       string
+	disableProxy          bool
+	gkeMetadata           string
 }
 
 func serverCmdFlagsToMap() map[string]any {
-	return map[string]any{
-		"port":            serverCmdFlags.port,
-		"localPort":       serverCmdFlags.localPort,
-		"cacheSyncPeriod": serverCmdFlags.cacheSyncPeriod.String(),
+	m := map[string]any{
+		"port":                  serverCmdFlags.port,
+		"localPort":             serverCmdFlags.localPort,
+		"objectCacheSyncPeriod": serverCmdFlags.objectCacheSyncPeriod.String(),
+		"defaultAudience":       serverCmdFlags.defaultAudience,
+		"disableProxy":          serverCmdFlags.disableProxy,
 	}
+
+	if serverCmdFlags.gkeMetadata != "" {
+		m["gkeMetadata"] = serverCmdFlags.gkeMetadata
+	}
+
+	return m
 }
 
 func init() {
@@ -83,10 +87,25 @@ func init() {
 		"Port to listen on")
 	serverCmd.Flags().IntVar(&serverCmdFlags.localPort, "local-port", 8081,
 		"Port to listen on over plain HTTP for local traffic from gRPC gateway")
-	serverCmd.Flags().DurationVar(&serverCmdFlags.cacheSyncPeriod, "cache-sync-period", 10*time.Minute,
+	serverCmd.Flags().DurationVar(&serverCmdFlags.objectCacheSyncPeriod, "object-cache-sync-period", 10*time.Minute,
 		"The period with which the Kubernetes cache is synced. Minimum of 10m and maximum of 1h.")
+	serverCmd.Flags().StringVar(&serverCmdFlags.defaultAudience, "default-audience", "",
+		"Default audience to use for issuing service account tokens")
+	serverCmd.Flags().BoolVar(&serverCmdFlags.disableProxy, "disable-proxy", false,
+		"Disable the use of HTTP/S proxies for talking to the Security Token Service of cloud providers")
 
-	bindGKEMetadataServerFlag(serverCmd)
+	bindGKEMetadataServerFlag(serverCmd, &serverCmdFlags.gkeMetadata)
+}
+
+type service interface {
+	register(server *grpc.Server)
+	registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error
+}
+
+var services = []service{
+	awsService{},
+	azureService{},
+	gcpService{},
 }
 
 var serverCmd = &cobra.Command{
@@ -112,17 +131,47 @@ server only from pods running on the same node.
 
 		// Get context and logger.
 		ctx := rootCmdFlags.ctx
-		logger := fromContext(ctx)
+		logger := *fromContext(ctx)
 		httpLogger := newHTTPLogger(logger)
 		promLogger := newPromLogger(logger)
 
 		// Start the GKE metadata server if the flag is set.
-		if gkeMetadataServerFlag != "" {
-			close, err := startGKEMetadataServer()
+		if md := serverCmdFlags.gkeMetadata; md != "" {
+			close, err := startGKEMetadataServer(md)
 			if err != nil {
 				return fmt.Errorf("failed to start GKE metadata server: %w", err)
 			}
 			defer close()
+		}
+
+		// Build bifröst options.
+		var opts []bifröst.Option
+
+		// Set default audience if provided.
+		if serverCmdFlags.defaultAudience != "" {
+			opts = append(opts, bifröst.WithDefaultAudience(serverCmdFlags.defaultAudience))
+		}
+
+		// Detect if running on GKE and use GCP as the identity provider.
+		gkeDetectionCtx, cancelGKEDetectionCtx := context.WithTimeout(ctx, 3*time.Second)
+		logger.Info("checking if running on GKE")
+		if _, err := (gcp.Provider{}).GetAudience(gkeDetectionCtx); err == nil {
+			logger.Info("GKE cluster detected")
+			opts = append(opts, bifröst.WithIdentityProvider(gcp.Provider{}))
+		} else {
+			logger.Info("non-GKE cluster detected")
+		}
+		cancelGKEDetectionCtx()
+
+		// Configure HTTP/S proxy settings.
+		if serverCmdFlags.disableProxy {
+			opts = append(opts, bifröst.WithProxyURL(url.URL{}))
+		} else if env := os.Getenv("BIFROST_PROXY_URL"); env != "" {
+			proxyURL, err := url.Parse(env)
+			if err != nil {
+				return fmt.Errorf("failed to parse proxy URL: %w", err)
+			}
+			opts = append(opts, bifröst.WithProxyURL(*proxyURL))
 		}
 
 		// Create Kubernetes client.
@@ -147,8 +196,9 @@ server only from pods running on the same node.
 		}, []string{"method", "path", "status"})
 
 		// Configure gRPC services.
-		grpcInterceptor := newServerInterceptor(kubeClient, serverLatencySecs, logger)
-		grpcServer := grpc.NewServer(grpc.UnaryInterceptor(grpcInterceptor))
+		observabilityInterceptor := newServerObservabilityInterceptor(serverLatencySecs, logger)
+		optionsInterceptor := newServerOptionsInterceptor(kubeClient, opts)
+		grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(observabilityInterceptor, optionsInterceptor))
 		gwMux := runtime.NewServeMux(runtime.WithMetadata(getGatewayMetadata))
 		gwDialOpts := []grpc.DialOption{
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -178,7 +228,7 @@ server only from pods running on the same node.
 			case r.URL.Path == "/healthz", r.URL.Path == "/readyz":
 				w.WriteHeader(http.StatusOK)
 			default:
-				statusRecorder := &httpStatusRecorder{ResponseWriter: w}
+				statusRecorder := &gatewayStatusRecorder{ResponseWriter: w}
 				w = statusRecorder
 
 				start := time.Now()
@@ -214,10 +264,9 @@ server only from pods running on the same node.
 		}()
 		go func() {
 			var err error
-			switch {
-			case rootCmdFlags.Insecure:
+			if rootCmdFlags.DisableTLS {
 				err = server.ListenAndServe()
-			default:
+			} else {
 				err = server.ListenAndServeTLS(rootCmdFlags.TLSCertFile, rootCmdFlags.TLSKeyFile)
 			}
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -242,7 +291,7 @@ server only from pods running on the same node.
 }
 
 func newServerKubeClient(ctx context.Context) (client.Client, error) {
-	syncPeriod := serverCmdFlags.cacheSyncPeriod
+	syncPeriod := serverCmdFlags.objectCacheSyncPeriod
 	if syncPeriod < 10*time.Minute {
 		return nil, fmt.Errorf("cache sync period must be at least 10m")
 	}
@@ -257,7 +306,8 @@ func newServerKubeClient(ctx context.Context) (client.Client, error) {
 	}
 	go func() {
 		if err := cache.Start(ctx); err != nil {
-			fromContext(ctx).WithError(err).Fatal("failed to start kubernetes cache")
+			l := *fromContext(ctx)
+			l.WithError(err).Fatal("failed to start kubernetes cache")
 		}
 	}()
 	if !cache.WaitForCacheSync(ctx) {
@@ -276,8 +326,11 @@ func newServerKubeClient(ctx context.Context) (client.Client, error) {
 	})
 }
 
-func newServerInterceptor(client client.Client,
-	latencySecs *prometheus.SummaryVec,
+// =========================
+// observability interceptor
+// =========================
+
+func newServerObservabilityInterceptor(latencySecs *prometheus.SummaryVec,
 	logger logrus.FieldLogger) grpc.UnaryServerInterceptor {
 
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo,
@@ -285,21 +338,11 @@ func newServerInterceptor(client client.Client,
 
 		start := time.Now()
 
-		// Extract remote address.
-		serviceAccountRef, err := extractServiceAccountRef(ctx, client)
-		if err != nil {
-			return nil, err
-		}
-
 		// Inject logger into context.
-		ctx = intoContext(ctx, logger)
-		logger = logger.WithField("method", info.FullMethod).WithField("serviceAccount", logrus.Fields{
-			"name":      serviceAccountRef.Name,
-			"namespace": serviceAccountRef.Namespace,
-		})
+		ctx = intoContext(ctx, logger.WithField("method", info.FullMethod))
+		logger := fromContext(ctx)
 
 		// Call handler.
-		logger.Debug("handling request")
 		resp, err = handler(ctx, req)
 
 		// Compute status.
@@ -320,20 +363,54 @@ func newServerInterceptor(client client.Client,
 			Observe(latency.Seconds())
 
 		// Log non-OK requests.
-		if statusCode != codes.OK {
-			latencyFields := logrus.Fields{
-				"human":   latency.String(),
-				"seconds": latency.Seconds(),
-			}
-			grpcStatusToLogger(statusText, statusObject, logger, err).
-				WithError(err).
-				WithField("latency", latencyFields).
-				Error("error handling request")
+		l := (*logger).WithField("latency", logrus.Fields{
+			"human":   latency.String(),
+			"seconds": latency.Seconds(),
+		})
+		if statusCode == codes.OK {
+			l.Info("token issued")
+		} else {
+			grpcStatusToLogger(statusText, statusObject, l, err).
+				WithError(err).Error("error handling request")
 		}
 
 		return
 	}
 }
+
+func grpcStatusToLogger(statusText string, statusObject *status.Status,
+	logger logrus.FieldLogger, original error) logrus.FieldLogger {
+
+	withStatusCode := logger.WithField("statusCode", statusText)
+
+	if statusObject == nil {
+		return withStatusCode
+	}
+
+	b, err := protojson.Marshal(statusObject.Proto())
+	if err != nil {
+		withStatusCode.
+			WithError(err).
+			WithField("originalError", original.Error()).
+			Error("failed to marshal error status")
+		return withStatusCode
+	}
+
+	var s any
+	if err := json.Unmarshal(b, &s); err != nil {
+		withStatusCode.
+			WithError(err).
+			WithField("originalError", original.Error()).
+			Error("failed to unmarshal error status")
+		return withStatusCode
+	}
+
+	return logger.WithField("status", s)
+}
+
+// ===================
+// options interceptor
+// ===================
 
 const (
 	metadataKeyServiceAccountToken = "service-account-token"
@@ -397,48 +474,57 @@ func extractServiceAccountRef(ctx context.Context, c client.Client) (*client.Obj
 	}, nil
 }
 
-func grpcStatusToLogger(statusText string, statusObject *status.Status,
-	logger logrus.FieldLogger, original error) logrus.FieldLogger {
+type optionsContextKey struct{}
 
-	withStatusCode := logger.WithField("statusCode", statusText)
-
-	if statusObject == nil {
-		return withStatusCode
-	}
-
-	b, err := protojson.Marshal(statusObject.Proto())
-	if err != nil {
-		withStatusCode.
-			WithError(err).
-			WithField("originalError", original.Error()).
-			Error("failed to marshal error status")
-		return withStatusCode
-	}
-
-	var s any
-	if err := json.Unmarshal(b, &s); err != nil {
-		withStatusCode.
-			WithError(err).
-			WithField("originalError", original.Error()).
-			Error("failed to unmarshal error status")
-		return withStatusCode
-	}
-
-	return logger.WithField("status", s)
+func optionsFromContext(ctx context.Context) []bifröst.Option {
+	opts, _ := ctx.Value(optionsContextKey{}).([]bifröst.Option)
+	return opts
 }
 
-type httpStatusRecorder struct {
+func newServerOptionsInterceptor(c client.Client, rootOpts []bifröst.Option) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler) (resp any, err error) {
+
+		serviceAccountRef, err := extractServiceAccountRef(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+
+		logger := fromContext(ctx)
+		*logger = (*logger).WithField("serviceAccount", logrus.Fields{
+			"name":      serviceAccountRef.Name,
+			"namespace": serviceAccountRef.Namespace,
+		})
+		opts := append(rootOpts, bifröst.WithServiceAccount(*serviceAccountRef, c))
+
+		// The only identity provider we support is GCP. If the requested
+		// acces token is for GCP, then using GCP as the identity provider
+		// is not necessary.
+		if strings.HasPrefix(info.FullMethod, "/"+gcp.ProviderName+".") {
+			opts = append(opts, bifröst.WithIdentityProvider(nil))
+		}
+
+		ctx = context.WithValue(ctx, optionsContextKey{}, opts)
+		return handler(ctx, req)
+	}
+}
+
+// ============================
+// gRPC gateway status recorder
+// ============================
+
+type gatewayStatusRecorder struct {
 	http.ResponseWriter
 
 	status int
 }
 
-func (s *httpStatusRecorder) WriteHeader(status int) {
+func (s *gatewayStatusRecorder) WriteHeader(status int) {
 	s.status = status
 	s.ResponseWriter.WriteHeader(status)
 }
 
-func (s *httpStatusRecorder) getStatus() int {
+func (s *gatewayStatusRecorder) getStatus() int {
 	if s.status == 0 {
 		return http.StatusOK
 	}
