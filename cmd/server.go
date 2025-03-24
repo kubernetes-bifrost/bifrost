@@ -55,12 +55,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const metricsNamespace = "bifrost"
+
 var serverCmdFlags struct {
 	port                  int
 	localPort             int
-	objectCacheSyncPeriod time.Duration
 	defaultAudience       string
 	disableProxy          bool
+	objectCacheSyncPeriod time.Duration
+	tokenCacheMaxSize     int
+	tokenCacheMaxDuration time.Duration
 	gkeMetadata           string
 }
 
@@ -68,9 +72,11 @@ func serverCmdFlagsToMap() map[string]any {
 	m := map[string]any{
 		"port":                  serverCmdFlags.port,
 		"localPort":             serverCmdFlags.localPort,
-		"objectCacheSyncPeriod": serverCmdFlags.objectCacheSyncPeriod.String(),
 		"defaultAudience":       serverCmdFlags.defaultAudience,
 		"disableProxy":          serverCmdFlags.disableProxy,
+		"objectCacheSyncPeriod": serverCmdFlags.objectCacheSyncPeriod.String(),
+		"tokenCacheMaxSize":     serverCmdFlags.tokenCacheMaxSize,
+		"tokenCacheMaxDuration": serverCmdFlags.tokenCacheMaxDuration.String(),
 	}
 
 	if serverCmdFlags.gkeMetadata != "" {
@@ -87,12 +93,16 @@ func init() {
 		"Port to listen on")
 	serverCmd.Flags().IntVar(&serverCmdFlags.localPort, "local-port", 8081,
 		"Port to listen on over plain HTTP for local traffic from gRPC gateway")
-	serverCmd.Flags().DurationVar(&serverCmdFlags.objectCacheSyncPeriod, "object-cache-sync-period", 10*time.Minute,
-		"The period with which the Kubernetes cache is synced. Minimum of 10m and maximum of 1h.")
 	serverCmd.Flags().StringVar(&serverCmdFlags.defaultAudience, "default-audience", "",
 		"Default audience to use for issuing service account tokens")
 	serverCmd.Flags().BoolVar(&serverCmdFlags.disableProxy, "disable-proxy", false,
 		"Disable the use of HTTP/S proxies for talking to the Security Token Service of cloud providers")
+	serverCmd.Flags().DurationVar(&serverCmdFlags.objectCacheSyncPeriod, "object-cache-sync-period", 10*time.Minute,
+		"The period with which the Kubernetes object cache is synced. Minimum of 10m and maximum of 1h")
+	serverCmd.Flags().IntVar(&serverCmdFlags.tokenCacheMaxSize, "token-cache-max-size", 1000,
+		"Maximum number of tokens to cache. Set to zero to disable caching tokens")
+	serverCmd.Flags().DurationVar(&serverCmdFlags.tokenCacheMaxDuration, "token-cache-max-duration", time.Hour,
+		"Maximum duration to cache tokens")
 
 	bindGKEMetadataServerFlag(serverCmd, &serverCmdFlags.gkeMetadata)
 }
@@ -147,6 +157,13 @@ server only from pods running on the same node.
 		// Build bifröst options.
 		var opts []bifröst.Option
 
+		// Set token cache options if provided.
+		var cache bifröst.Cache
+		if serverCmdFlags.tokenCacheMaxSize > 0 {
+			cache = bifröst.NewCache(serverCmdFlags.tokenCacheMaxSize,
+				bifröst.WithMaxDuration(serverCmdFlags.tokenCacheMaxDuration))
+		}
+
 		// Set default audience if provided.
 		if serverCmdFlags.defaultAudience != "" {
 			opts = append(opts, bifröst.WithDefaultAudience(serverCmdFlags.defaultAudience))
@@ -175,13 +192,14 @@ server only from pods running on the same node.
 		}
 
 		// Create Kubernetes client.
+		logger.Info("starting kubernetes cache")
 		kubeClient, err := newServerKubeClient(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to create kubernetes client: %w", err)
 		}
+		logger.Info("kubernetes cache started")
 
 		// Create metrics.
-		const metricsNamespace = "bifrost"
 		serverLatencySecs := promauto.NewSummaryVec(prometheus.SummaryOpts{
 			Help:      "gRPC server request latency in seconds.",
 			Namespace: metricsNamespace,
@@ -197,7 +215,7 @@ server only from pods running on the same node.
 
 		// Configure gRPC services.
 		observabilityInterceptor := newServerObservabilityInterceptor(serverLatencySecs, logger)
-		optionsInterceptor := newServerOptionsInterceptor(kubeClient, opts)
+		optionsInterceptor := newServerOptionsInterceptor(kubeClient, cache, opts)
 		grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(observabilityInterceptor, optionsInterceptor))
 		gwMux := runtime.NewServeMux(runtime.WithMetadata(getGatewayMetadata))
 		gwDialOpts := []grpc.DialOption{
@@ -481,7 +499,49 @@ func optionsFromContext(ctx context.Context) []bifröst.Option {
 	return opts
 }
 
-func newServerOptionsInterceptor(c client.Client, rootOpts []bifröst.Option) grpc.UnaryServerInterceptor {
+func newServerOptionsInterceptor(c client.Client, cache bifröst.Cache,
+	rootOpts []bifröst.Option) grpc.UnaryServerInterceptor {
+
+	// Build cache metrics.
+	const tokenCacheMetricsSubsystem = "token_cache"
+	var tokenCacheLatencies *prometheus.SummaryVec
+	var tokenCacheEvents *prometheus.CounterVec
+	var tokenCacheDuplicates *prometheus.CounterVec
+	var tokenCacheEvictions prometheus.Counter
+	var tokenCacheItems prometheus.Gauge
+	if cache != nil {
+		tokenCacheLatencies = promauto.NewSummaryVec(prometheus.SummaryOpts{
+			Help:      "Token cache request latency in seconds per service account, gRPC method and status.",
+			Namespace: metricsNamespace,
+			Subsystem: tokenCacheMetricsSubsystem,
+			Name:      "request_latency_seconds",
+		}, []string{"name", "namespace", "method", "status"})
+		tokenCacheEvents = promauto.NewCounterVec(prometheus.CounterOpts{
+			Help:      "Token cache event count per service account and gRPC method.",
+			Namespace: metricsNamespace,
+			Subsystem: tokenCacheMetricsSubsystem,
+			Name:      "events_total",
+		}, []string{"name", "namespace", "method", "event"})
+		tokenCacheDuplicates = promauto.NewCounterVec(prometheus.CounterOpts{
+			Help:      "Number of token requests that overlapped with in-flight requests.",
+			Namespace: metricsNamespace,
+			Subsystem: tokenCacheMetricsSubsystem,
+			Name:      "duplicates_total",
+		}, []string{"name", "namespace", "method"})
+		tokenCacheEvictions = promauto.NewCounter(prometheus.CounterOpts{
+			Help:      "Number of token cache evictions.",
+			Namespace: metricsNamespace,
+			Subsystem: tokenCacheMetricsSubsystem,
+			Name:      "evictions_total",
+		})
+		tokenCacheItems = promauto.NewGauge(prometheus.GaugeOpts{
+			Help:      "Number of items in the token cache.",
+			Namespace: metricsNamespace,
+			Subsystem: tokenCacheMetricsSubsystem,
+			Name:      "items",
+		})
+	}
+
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler) (resp any, err error) {
 
@@ -496,6 +556,31 @@ func newServerOptionsInterceptor(c client.Client, rootOpts []bifröst.Option) gr
 			"namespace": serviceAccountRef.Namespace,
 		})
 		opts := append(rootOpts, bifröst.WithServiceAccount(*serviceAccountRef, c))
+
+		defer func() {
+			if err != nil {
+				return
+			}
+			l := *logger
+			if cache == nil {
+				l.Info("token issued")
+			}
+			l.Debug("token retrieved")
+		}()
+
+		if cache != nil {
+			observer := &tokenCacheObserver{
+				logger:            logger,
+				latencies:         tokenCacheLatencies,
+				events:            tokenCacheEvents,
+				duplicates:        tokenCacheDuplicates,
+				evictions:         tokenCacheEvictions,
+				items:             tokenCacheItems,
+				serviceAccountRef: serviceAccountRef,
+				method:            info.FullMethod,
+			}
+			opts = append(opts, bifröst.WithCache(cache.WithObserver(observer)))
+		}
 
 		// The only identity provider we support is GCP. If the requested
 		// acces token is for GCP, then using GCP as the identity provider
@@ -529,4 +614,57 @@ func (s *gatewayStatusRecorder) getStatus() int {
 		return http.StatusOK
 	}
 	return s.status
+}
+
+// ====================
+// token cache observer
+// ====================
+
+type tokenCacheObserver struct {
+	logger            *logrus.FieldLogger
+	latencies         *prometheus.SummaryVec
+	events            *prometheus.CounterVec
+	duplicates        *prometheus.CounterVec
+	evictions         prometheus.Counter
+	items             prometheus.Gauge
+	serviceAccountRef *client.ObjectKey
+	method            string
+}
+
+func (t *tokenCacheObserver) OnCacheHit() {
+	t.events.WithLabelValues(t.serviceAccountRef.Name,
+		t.serviceAccountRef.Namespace, t.method, "hit").Inc()
+}
+
+func (t *tokenCacheObserver) OnCacheMiss() {
+	t.events.WithLabelValues(t.serviceAccountRef.Name,
+		t.serviceAccountRef.Namespace, t.method, "miss").Inc()
+}
+
+func (t *tokenCacheObserver) OnTokenIssued(latency time.Duration) {
+	(*t.logger).Info("token issued")
+	t.items.Inc()
+	t.latencies.WithLabelValues(t.serviceAccountRef.Name,
+		t.serviceAccountRef.Namespace, t.method, "success").
+		Observe(latency.Seconds())
+}
+
+func (t *tokenCacheObserver) OnTokenEvicted() {
+	t.items.Dec()
+	t.evictions.Inc()
+}
+
+func (t *tokenCacheObserver) OnTokenExpired() {
+	t.items.Dec()
+}
+
+func (t *tokenCacheObserver) OnFailedRequest(latency time.Duration) {
+	t.latencies.WithLabelValues(t.serviceAccountRef.Name,
+		t.serviceAccountRef.Namespace, t.method, "failure").
+		Observe(latency.Seconds())
+}
+
+func (t *tokenCacheObserver) OnDuplicateRequest() {
+	t.duplicates.WithLabelValues(t.serviceAccountRef.Name,
+		t.serviceAccountRef.Namespace, t.method).Inc()
 }

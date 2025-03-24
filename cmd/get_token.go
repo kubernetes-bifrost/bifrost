@@ -181,7 +181,7 @@ Expires At: %[3]s (%[4]s)
 				return fmt.Errorf("failed to create kubernetes client: %w", err)
 			}
 			if serviceAccountToken == "" && getTokenCmdFlags.grpcEndpoint != "" {
-				serviceAccountToken, err = getServiceAccountToken(ctx, kubeClient, serviceAccountRef)
+				serviceAccountToken, err = newServiceAccountToken(ctx, kubeClient, serviceAccountRef)
 				if err != nil {
 					return err
 				}

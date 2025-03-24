@@ -72,7 +72,7 @@ var getServiceAccountTokenCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to create kubernetes client: %w", err)
 		}
-		token, err = getServiceAccountToken(ctx, kubeClient, &ref)
+		token, err = newServiceAccountToken(ctx, kubeClient, &ref)
 		if err != nil {
 			return err
 		}
@@ -81,7 +81,7 @@ var getServiceAccountTokenCmd = &cobra.Command{
 	},
 }
 
-func getServiceAccountToken(ctx context.Context, kubeClient client.Client, ref *client.ObjectKey) (string, error) {
+func newServiceAccountToken(ctx context.Context, kubeClient client.Client, ref *client.ObjectKey) (string, error) {
 	serviceAccount := &corev1.ServiceAccount{}
 	if err := kubeClient.Get(ctx, *ref, serviceAccount); err != nil {
 		return "", fmt.Errorf("failed to get kubernetes service account: %w", err)

@@ -944,7 +944,8 @@ func TestGetToken(t *testing.T) {
 }
 
 type mockToken struct {
-	value string
+	value    string
+	duration time.Duration
 }
 
 type mockCache struct {
@@ -979,8 +980,8 @@ type mockProvider struct {
 	identityTokenAccessToken bifröst.Token
 }
 
-func (*mockToken) GetDuration() time.Duration {
-	return 0
+func (m *mockToken) GetDuration() time.Duration {
+	return m.duration
 }
 
 func (m *mockCache) GetOrSet(key string, newToken func() (bifröst.Token, error)) (bifröst.Token, error) {
@@ -988,6 +989,10 @@ func (m *mockCache) GetOrSet(key string, newToken func() (bifröst.Token, error)
 		return m.token, nil
 	}
 	return newToken()
+}
+
+func (m *mockCache) WithObserver(bifröst.CacheObserver) bifröst.Cache {
+	return m
 }
 
 func (m *mockProvider) GetName() string {
