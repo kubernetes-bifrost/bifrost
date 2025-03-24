@@ -20,9 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package aws
+package main
 
-// ProviderName is the name of the provider.
-const ProviderName = "aws"
-
-type Provider struct{}
+const envProxyURL = "BIFROST_PROXY_URL"

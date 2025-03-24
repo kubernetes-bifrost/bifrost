@@ -44,9 +44,10 @@ type Provider interface {
 	// metadata services, etc.
 	NewDefaultAccessToken(ctx context.Context, opts ...Option) (Token, error)
 
-	// GetAudience returns the audience identity tokens issued for creating access
-	// tokens for the provider should have.
-	GetAudience(ctx context.Context) (string, error)
+	// GetAudience returns the audience identity tokens should have for being
+	// accepted by the cloud provider and exchanged for access tokens.
+	GetAudience(ctx context.Context, serviceAccount *corev1.ServiceAccount,
+		opts ...Option) (string, error)
 
 	// NewAccessToken takes a service account and an identity token and returns a token
 	// that can be used to authenticate with the cloud provider.

@@ -28,8 +28,6 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
 )
@@ -131,29 +129,18 @@ func TestWithProxyURL(t *testing.T) {
 }
 
 func TestOptions_Apply(t *testing.T) {
-	for _, tt := range []struct {
-		name             string
-		opts             []bifröst.Option
-		expectedAudience string
-	}{
-		{
-			name:             "empty",
-			expectedAudience: "",
-		},
-		{
-			name:             "with audience",
-			opts:             []bifröst.Option{bifröst.WithAudience("test")},
-			expectedAudience: "test",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
+	g := NewWithT(t)
 
-			var o bifröst.Options
-			o.Apply(tt.opts...)
-			g.Expect(o.GetAudience(nil)).To(Equal(tt.expectedAudience))
-		})
-	}
+	var o bifröst.Options
+	o.Apply(bifröst.WithContainerRegistry("registry.example.com"))
+	o.Apply(bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "localhost"}))
+
+	g.Expect(o.GetContainerRegistry()).To(Equal("registry.example.com"))
+
+	httpClient := o.GetHTTPClient()
+	g.Expect(httpClient).NotTo(BeNil())
+	proxyURL, _ := httpClient.Transport.(*http.Transport).Proxy(nil)
+	g.Expect(proxyURL).To(Equal(&url.URL{Scheme: "http", Host: "localhost"}))
 }
 
 func TestOptions_ApplyProviderOptions(t *testing.T) {
@@ -167,63 +154,4 @@ func TestOptions_ApplyProviderOptions(t *testing.T) {
 	var x int
 	o.ApplyProviderOptions(&x)
 	g.Expect(x).To(Equal(42))
-}
-
-func TestOptions_GetAudience(t *testing.T) {
-	for _, tt := range []struct {
-		name             string
-		opts             []bifröst.Option
-		serviceAccount   *corev1.ServiceAccount
-		expectedAudience string
-	}{
-		{
-			name: "audience from options has precedence over service account annotation",
-			opts: []bifröst.Option{
-				bifröst.WithAudience("option-audience"),
-				bifröst.WithDefaultAudience("default-audience"),
-			},
-			serviceAccount: &corev1.ServiceAccount{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						"serviceaccounts.bifrost-k8s.io/audience": "sa-audience",
-					},
-				},
-			},
-			expectedAudience: "option-audience",
-		},
-		{
-			name: "audience from service account annotation has precedence over default audience",
-			opts: []bifröst.Option{
-				bifröst.WithDefaultAudience("default-audience"),
-			},
-			serviceAccount: &corev1.ServiceAccount{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						"serviceaccounts.bifrost-k8s.io/audience": "sa-audience",
-					},
-				},
-			},
-			expectedAudience: "sa-audience",
-		},
-		{
-			name: "default audience",
-			opts: []bifröst.Option{
-				bifröst.WithDefaultAudience("default-audience"),
-			},
-			expectedAudience: "default-audience",
-		},
-		{
-			name:             "no audience",
-			expectedAudience: "",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			var o bifröst.Options
-			o.Apply(tt.opts...)
-
-			g.Expect(o.GetAudience(tt.serviceAccount)).To(Equal(tt.expectedAudience))
-		})
-	}
 }

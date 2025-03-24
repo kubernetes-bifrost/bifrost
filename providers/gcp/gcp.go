@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,6 +43,17 @@ import (
 	bifröst "github.com/kubernetes-bifrost/bifrost"
 )
 
+const (
+	// ProviderName is the name of the provider.
+	ProviderName = "gcp"
+
+	// APIGroup is the API group for the gcp.bifrost-k8s.io API.
+	APIGroup = ProviderName + "." + bifröst.APIGroup
+
+	// ServiceAccountWorkloadIdentityProvider is the annotation key for the workload identity provider.
+	ServiceAccountWorkloadIdentityProvider = APIGroup + "/workloadIdentityProvider"
+)
+
 // Provider implements bifröst.Provider.
 type Provider struct{}
 
@@ -52,24 +64,33 @@ var _ bifröst.IdentityProvider = Provider{}
 // Token is the GCP token.
 type Token struct{ oauth2.Token }
 
-const (
-	// ProviderName is the name of the provider.
-	ProviderName = "gcp"
-
-	// GKEServiceAccountAnnotation is the annotation used by GKE to specify
-	// the GCP service account email to impersonate.
-	GKEServiceAccountAnnotation = "iam.gke.io/gcp-service-account"
-
-	// ServiceAccountEmailPattern is the pattern for GCP service account emails.
-	ServiceAccountEmailPattern = `^[a-zA-Z0-9-]+@[a-zA-Z0-9-]+\.iam\.gserviceaccount\.com$`
-
-	// WorkloadIdentityProviderPattern is the pattern for GCP workload identity providers.
-	WorkloadIdentityProviderPattern = `^projects/(\d+)/locations/global/workloadIdentityPools/([^/]+)/providers/[^/]+$`
-)
-
 type options struct {
-	serviceAccountEmail *string
-	impl                implProvider
+	workloadIdentityProvider        string
+	defaultWorkloadIdentityProvider string
+	serviceAccountEmail             *string
+	impl                            implProvider
+}
+
+// WithWorkloadIdentityProvider sets the workload identity provider for
+// issuing access tokens. Has precendence over the workload identity
+// provider set on service account annotations.
+func WithWorkloadIdentityProvider(wip string) bifröst.ProviderOption {
+	return func(po any) {
+		if o, ok := po.(*options); ok {
+			o.workloadIdentityProvider = wip
+		}
+	}
+}
+
+// WithDefaultWorkloadIdentityProvider sets the workload identity provider
+// for issuing access tokens. Used when there is no workload identity provider
+// set with WithWorkloadIdentityProvider or on service account annotations.
+func WithDefaultWorkloadIdentityProvider(wip string) bifröst.ProviderOption {
+	return func(po any) {
+		if o, ok := po.(*options); ok {
+			o.defaultWorkloadIdentityProvider = wip
+		}
+	}
 }
 
 // WithServiceAccountEmail sets the service account email to impersonate.
@@ -98,13 +119,12 @@ func (Provider) GetName() string {
 
 // BuildCacheKey implements bifröst.Provider.
 func (Provider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...bifröst.Option) (string, error) {
-	var o bifröst.Options
-	o.Apply(opts...)
+	o, po, _ := getOptions(opts...)
 
 	var keyParts []string
 
 	if serviceAccount != nil && !o.PreferDirectAccess() {
-		email, err := serviceAccountEmail(serviceAccount, &o)
+		email, err := serviceAccountEmail(serviceAccount, po)
 		if err != nil {
 			return "", err
 		}
@@ -122,7 +142,7 @@ func (Provider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...bif
 
 // NewDefaultAccessToken implements bifröst.Provider.
 func (Provider) NewDefaultAccessToken(ctx context.Context, opts ...bifröst.Option) (bifröst.Token, error) {
-	o, impl := getOptions(opts...)
+	o, _, impl := getOptions(opts...)
 
 	if hc := o.GetHTTPClient(); hc != nil {
 		ctx = context.WithValue(ctx, oauth2.HTTPClient, hc)
@@ -141,29 +161,94 @@ func (Provider) NewDefaultAccessToken(ctx context.Context, opts ...bifröst.Opti
 }
 
 // GetAudience implements bifröst.Provider.
-func (Provider) GetAudience(ctx context.Context) (string, error) {
-	// This method only gets called by bifröst when the audience is not set
-	// in the options. When GCP Workload Identity Federation is being used,
-	// the audience must be set through options, so this method is only
-	// called when the cluster is necessarily a GKE cluster.
-	return impl{}.GKEMetadata().WorkloadIdentityPool(ctx)
+// It returns the audience kubernetes service account tokens
+// should should contain for being exchanged for GCP access
+// tokens.
+func (Provider) GetAudience(ctx context.Context,
+	serviceAccount *corev1.ServiceAccount,
+	opts ...bifröst.Option) (string, error) {
+
+	_, po, impl := getOptions(opts...)
+
+	// There are two cases to consider.
+
+	// 1. The current cluster is not GKE. In this case,
+	// the setup uses Workload Identity Federation, which
+	// requires a Workload Identity Provider to be set in
+	// the options or in the service account annotations.
+	// In this case the audience is derived from this
+	// Workload Identity Provider.
+	aud, err := getAudienceFromOptions(serviceAccount, po)
+	if err != nil {
+		return "", err
+	}
+	if aud != "" {
+		return aud, nil
+	}
+
+	// 2. If no Workload Identity Provider is set, we assume
+	// the pod is running on GKE and get the audience for
+	// this case, which is the built-in Workload Identity
+	// Pool of a GKE cluster.
+	return impl.GKEMetadata().WorkloadIdentityPool(ctx)
+}
+
+func getAudienceFromOptions(serviceAccount *corev1.ServiceAccount, po *options) (string, error) {
+	if wip := po.workloadIdentityProvider; wip != "" {
+		return ParseWorkloadIdentityProvider(wip)
+	}
+
+	if serviceAccount != nil {
+		if wip := serviceAccount.Annotations[ServiceAccountWorkloadIdentityProvider]; wip != "" {
+			return ParseWorkloadIdentityProvider(wip)
+		}
+	}
+
+	if wip := po.defaultWorkloadIdentityProvider; wip != "" {
+		return ParseWorkloadIdentityProvider(wip)
+	}
+
+	return "", nil
 }
 
 // NewAccessToken implements bifröst.Provider.
 func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 	serviceAccount *corev1.ServiceAccount, opts ...bifröst.Option) (bifröst.Token, error) {
 
-	o, impl := getOptions(opts...)
+	o, po, impl := getOptions(opts...)
 
-	audience := o.GetAudience(serviceAccount)
+	// The exchange process requires an audience. This is not
+	// necessarily the same audience used for issuing service
+	// account tokens, i.e. the logic implemented by the
+	// GetAudience method. There are two cases to consider.
+
+	// 1. The current cluster is not GKE. In this case,
+	// the setup uses Workload Identity Federation, which
+	// requires a Workload Identity Provider to be set in
+	// the options or in the service account annotations.
+	// In this case the audience is derived from this
+	// Workload Identity Provider. So far, this is the same
+	// audience used for issuing service account tokens.
+	audience, err := getAudienceFromOptions(serviceAccount, po)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. If no Workload Identity Provider is set, we assume
+	// the pod is running on GKE and get the audience for
+	// this case, which is different from the audience used
+	// for issuing service account tokens. This audience is
+	// the concatenation of the built-in Workload Identity
+	// Pool and Workload Identity Provider of GKE clusters
+	// prefixed with "identitynamespace:".
 	if audience == "" {
-		// If the audience is not set, we assume the token is for GKE
-		// and we get the audience for GKE clusters.
-		var err error
-		audience, err = impl.GKEMetadata().GetAudience(ctx)
-		if err != nil {
+		gkeMetadata := impl.GKEMetadata()
+		if err := gkeMetadata.load(ctx); err != nil {
 			return nil, err
 		}
+		wiPool, _ := gkeMetadata.WorkloadIdentityPool(ctx)
+		wiProvider, _ := gkeMetadata.WorkloadIdentityProvider(ctx)
+		audience = fmt.Sprintf("identitynamespace:%s:%s", wiPool, wiProvider)
 	}
 
 	conf := &externalaccount.Config{
@@ -181,7 +266,7 @@ func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 	var email string
 	if !o.PreferDirectAccess() {
 		var err error
-		email, err = serviceAccountEmail(serviceAccount, o)
+		email, err = serviceAccountEmail(serviceAccount, po)
 		if err != nil {
 			return nil, err
 		}
@@ -229,13 +314,13 @@ func (Provider) NewIdentityToken(ctx context.Context, accessToken bifröst.Token
 	serviceAccount *corev1.ServiceAccount, audience string,
 	opts ...bifröst.Option) (string, error) {
 
-	o, impl := getOptions(opts...)
+	o, po, impl := getOptions(opts...)
 
 	if audience == "" {
 		return "", fmt.Errorf("audience is required for identity tokens")
 	}
 
-	email, err := serviceAccountEmail(serviceAccount, o)
+	email, err := serviceAccountEmail(serviceAccount, po)
 	if err != nil {
 		return "", err
 	}
@@ -276,24 +361,53 @@ func (Provider) NewIdentityToken(ctx context.Context, accessToken bifröst.Token
 	return idToken.AccessToken, nil
 }
 
-var serviceAccountEmailRegex = regexp.MustCompile(ServiceAccountEmailPattern)
+const workloadIdentityProviderPattern = `^((https:)?//iam.googleapis.com/)?projects/\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$`
 
-func serviceAccountEmail(serviceAccount *corev1.ServiceAccount, o *bifröst.Options) (string, error) {
-	var po options
-	o.ApplyProviderOptions(&po)
+var workloadIdentityProviderRegex = regexp.MustCompile(workloadIdentityProviderPattern)
+
+// ParseWorkloadIdentityProvider returns the audience for the given
+// GCP workload identity provider.
+func ParseWorkloadIdentityProvider(wip string) (string, error) {
+	if !workloadIdentityProviderRegex.MatchString(wip) {
+		return "", fmt.Errorf("invalid GCP workload identity provider: '%s'. must match %s",
+			wip, workloadIdentityProviderPattern)
+	}
+
+	if strings.HasPrefix(wip, "https://") {
+		return wip, nil
+	}
+
+	if strings.HasPrefix(wip, "//iam.googleapis.com/") {
+		return fmt.Sprintf("https:%s", wip), nil
+	}
+
+	return fmt.Sprintf("https://iam.googleapis.com/%s", wip), nil
+}
+
+const serviceAccountEmailPattern = `^[a-zA-Z0-9-]+@[a-zA-Z0-9-]+\.iam\.gserviceaccount\.com$`
+
+var serviceAccountEmailRegex = regexp.MustCompile(serviceAccountEmailPattern)
+
+func serviceAccountEmail(serviceAccount *corev1.ServiceAccount, po *options) (string, error) {
 	var email string
 	if e := po.serviceAccountEmail; e != nil {
 		email = *e
 	} else if serviceAccount != nil {
-		email = serviceAccount.Annotations[GKEServiceAccountAnnotation]
+		email = serviceAccount.Annotations["iam.gke.io/gcp-service-account"]
 	}
 	if email == "" {
 		return "", nil
 	}
 	if !serviceAccountEmailRegex.MatchString(email) {
-		return "", fmt.Errorf("invalid GCP service account email: '%s'", email)
+		return "", fmt.Errorf("invalid GCP service account email: '%s'. must match %s",
+			email, serviceAccountEmailPattern)
 	}
 	return email, nil
+}
+
+// OnGKE returns true if the pod is running on a GKE node/pod.
+func OnGKE(ctx context.Context) bool {
+	return impl{}.GKEMetadata().load(ctx) == nil
 }
 
 // GKEMetadata holds the GKE cluster metadata.
@@ -430,12 +544,12 @@ type implProvider interface {
 	NewTransport(ctx context.Context, base http.RoundTripper, opts ...option.ClientOption) (http.RoundTripper, error)
 }
 
-func getOptions(opts ...bifröst.Option) (*bifröst.Options, implProvider) {
+func getOptions(opts ...bifröst.Option) (*bifröst.Options, *options, implProvider) {
 	var o bifröst.Options
 	o.Apply(opts...)
 	po := options{impl: impl{}}
 	o.ApplyProviderOptions(&po)
-	return &o, po.impl
+	return &o, &po, po.impl
 }
 
 type impl struct{}

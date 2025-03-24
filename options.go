@@ -27,7 +27,6 @@ import (
 	"net/url"
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -36,8 +35,6 @@ type Options struct {
 	cache              Cache
 	client             Client
 	serviceAccountRef  *client.ObjectKey
-	audience           string
-	defaultAudience    string
 	identityProvider   IdentityProvider
 	httpClient         *http.Client
 	containerRegistry  string
@@ -66,27 +63,6 @@ func WithServiceAccount(serviceAccountRef client.ObjectKey, client Client) Optio
 	return func(o *Options) {
 		o.serviceAccountRef = &serviceAccountRef
 		o.client = client
-	}
-}
-
-// WithAudience sets the audience for which Kubernetes service account tokens
-// are issued. This is an identifier that will let the cloud provider know for
-// which resources, domain or scopes the exchanged access token should be for.
-// Each cloud provider defines its own audience values, some define fixed
-// values while others define values that can be specific to the cluster.
-// If this option is not specified, the audience will be taken from the
-// service account annotation. If the annotation is not set, the audience
-// will be taken from the default audience.
-func WithAudience(audience string) Option {
-	return func(o *Options) {
-		o.audience = audience
-	}
-}
-
-// WithDefaultAudience sets the default audience for getting the access token.
-func WithDefaultAudience(audience string) Option {
-	return func(o *Options) {
-		o.defaultAudience = audience
 	}
 }
 
@@ -182,21 +158,6 @@ func (o *Options) ApplyProviderOptions(opts any) {
 	for _, opt := range o.providerOptions {
 		opt(opts)
 	}
-}
-
-// GetAudience returns the configured audience for getting the access token.
-func (o *Options) GetAudience(serviceAccount *corev1.ServiceAccount) string {
-	if aud := o.audience; aud != "" {
-		return aud
-	}
-
-	if serviceAccount != nil {
-		if aud := serviceAccount.Annotations[ServiceAccountAudience]; aud != "" {
-			return aud
-		}
-	}
-
-	return o.defaultAudience
 }
 
 // GetIdentityProvider returns the configured identity provider.
