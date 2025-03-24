@@ -8,6 +8,7 @@ require (
 	github.com/elazarl/goproxy v1.7.2
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/onsi/gomega v1.36.2
+	golang.org/x/sync v0.12.0
 	k8s.io/api v0.32.3
 	k8s.io/apimachinery v0.32.3
 	k8s.io/client-go v0.32.3
