@@ -24,6 +24,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"os"
@@ -33,6 +34,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
@@ -48,6 +51,7 @@ var rootCmdFlags struct {
 	TLSCertFile        string `json:"tlsCertFile"`
 	TLSKeyFile         string `json:"tlsKeyFile"`
 	TLSCAFile          string `json:"tlsCAFile"`
+	TLSSkipVerify      bool   `json:"tlsSkipVerify"`
 	DisableTLS         bool   `json:"disableTLS"`
 
 	kubeServiceAccountToken string
@@ -79,6 +83,8 @@ func init() {
 		"Path to the TLS key file")
 	rootCmd.PersistentFlags().StringVar(&rootCmdFlags.TLSCAFile, "tls-ca-file", "/etc/bifrost/tls/ca.crt",
 		"Path to the TLS CA file")
+	rootCmd.PersistentFlags().BoolVar(&rootCmdFlags.TLSSkipVerify, "tls-skip-verify", false,
+		"Skip TLS certificate verification")
 	rootCmd.PersistentFlags().BoolVar(&rootCmdFlags.DisableTLS, "disable-tls", false,
 		"Disable TLS")
 }
@@ -178,4 +184,18 @@ func loadKubeConfig() (*rest.Config, error) {
 		}
 	}
 	return conf, nil
+}
+
+func getClientTransportCreds() (credentials.TransportCredentials, error) {
+	if rootCmdFlags.DisableTLS {
+		return insecure.NewCredentials(), nil
+	}
+	if rootCmdFlags.TLSSkipVerify {
+		return credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}), nil
+	}
+	creds, err := credentials.NewClientTLSFromFile(rootCmdFlags.TLSCAFile, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load TLS CA file: %w", err)
+	}
+	return creds, nil
 }
