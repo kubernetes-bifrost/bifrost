@@ -23,14 +23,12 @@
 package main
 
 import (
-	_ "embed"
 	"os"
 
 	"github.com/spf13/cobra"
 )
 
-//go:embed version.txt
-var version string
+var version string = "development"
 
 func main() {
 	// This makes cobra run all PersistentPreRuns in the natural order.
