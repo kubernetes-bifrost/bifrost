@@ -7,7 +7,7 @@ replace github.com/kubernetes-bifrost/bifrost => ../..
 require (
 	cloud.google.com/go/compute/metadata v0.6.0
 	github.com/kubernetes-bifrost/bifrost v0.14.0
-	github.com/onsi/gomega v1.36.2
+	github.com/onsi/gomega v1.36.3
 	golang.org/x/oauth2 v0.28.0
 	google.golang.org/api v0.227.0
 	k8s.io/api v0.32.3
@@ -58,7 +58,7 @@ require (
 	golang.org/x/time v0.11.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250313205543-e70fdf4c4cb4 // indirect
 	google.golang.org/grpc v1.71.0 // indirect
-	google.golang.org/protobuf v1.36.5 // indirect
+	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/client-go v0.32.3 // indirect
