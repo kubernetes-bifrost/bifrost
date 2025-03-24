@@ -45,28 +45,28 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type Options struct {
+type GetContainerRegistryLoginRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	TokenRequest  *GetTokenRequest       `protobuf:"bytes,1,opt,name=token_request,json=tokenRequest,proto3" json:"token_request,omitempty"`
+	Registry      string                 `protobuf:"bytes,2,opt,name=registry,proto3" json:"registry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Options) Reset() {
-	*x = Options{}
+func (x *GetContainerRegistryLoginRequest) Reset() {
+	*x = GetContainerRegistryLoginRequest{}
 	mi := &file_aws_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Options) String() string {
+func (x *GetContainerRegistryLoginRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Options) ProtoMessage() {}
+func (*GetContainerRegistryLoginRequest) ProtoMessage() {}
 
-func (x *Options) ProtoReflect() protoreflect.Message {
+func (x *GetContainerRegistryLoginRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_aws_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -78,21 +78,21 @@ func (x *Options) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Options.ProtoReflect.Descriptor instead.
-func (*Options) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetContainerRegistryLoginRequest.ProtoReflect.Descriptor instead.
+func (*GetContainerRegistryLoginRequest) Descriptor() ([]byte, []int) {
 	return file_aws_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *Options) GetKey() string {
+func (x *GetContainerRegistryLoginRequest) GetTokenRequest() *GetTokenRequest {
 	if x != nil {
-		return x.Key
+		return x.TokenRequest
 	}
-	return ""
+	return nil
 }
 
-func (x *Options) GetValue() string {
+func (x *GetContainerRegistryLoginRequest) GetRegistry() string {
 	if x != nil {
-		return x.Value
+		return x.Registry
 	}
 	return ""
 }
@@ -160,7 +160,6 @@ func (x *ContainerRegistryLogin) GetExpiresAt() *timestamppb.Timestamp {
 type GetTokenRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
-	Options       *Options               `protobuf:"bytes,2,opt,name=options,proto3" json:"options,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -200,13 +199,6 @@ func (x *GetTokenRequest) GetValue() string {
 		return x.Value
 	}
 	return ""
-}
-
-func (x *GetTokenRequest) GetOptions() *Options {
-	if x != nil {
-		return x.Options
-	}
-	return nil
 }
 
 type GetTokenResponse struct {
@@ -257,22 +249,22 @@ var File_aws_proto protoreflect.FileDescriptor
 
 const file_aws_proto_rawDesc = "" +
 	"\n" +
-	"\taws.proto\x12\x06aws.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/api/annotations.proto\"1\n" +
-	"\aOptions\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"\x8b\x01\n" +
+	"\taws.proto\x12\x06aws.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/api/annotations.proto\"|\n" +
+	" GetContainerRegistryLoginRequest\x12<\n" +
+	"\rtoken_request\x18\x01 \x01(\v2\x17.aws.v1.GetTokenRequestR\ftokenRequest\x12\x1a\n" +
+	"\bregistry\x18\x02 \x01(\tR\bregistry\"\x8b\x01\n" +
 	"\x16ContainerRegistryLogin\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x129\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"R\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"'\n" +
 	"\x0fGetTokenRequest\x12\x14\n" +
-	"\x05value\x18\x01 \x01(\tR\x05value\x12)\n" +
-	"\aoptions\x18\x02 \x01(\v2\x0f.aws.v1.OptionsR\aoptions\"(\n" +
+	"\x05value\x18\x01 \x01(\tR\x05value\"(\n" +
 	"\x10GetTokenResponse\x12\x14\n" +
-	"\x05value\x18\x01 \x01(\tR\x05value2_\n" +
+	"\x05value\x18\x01 \x01(\tR\x05value2\xe0\x01\n" +
 	"\aBifrost\x12T\n" +
-	"\bGetToken\x12\x17.aws.v1.GetTokenRequest\x1a\x18.aws.v1.GetTokenResponse\"\x15\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/aws/tokenB6Z4github.com/kubernetes-bifrost/bifrost/grpc/aws;awspbb\x06proto3"
+	"\bGetToken\x12\x17.aws.v1.GetTokenRequest\x1a\x18.aws.v1.GetTokenResponse\"\x15\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/aws/token\x12\x7f\n" +
+	"\x19GetContainerRegistryLogin\x12(.aws.v1.GetContainerRegistryLoginRequest\x1a\x1e.aws.v1.ContainerRegistryLogin\"\x18\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/aws/registryB6Z4github.com/kubernetes-bifrost/bifrost/grpc/aws;awspbb\x06proto3"
 
 var (
 	file_aws_proto_rawDescOnce sync.Once
@@ -288,19 +280,21 @@ func file_aws_proto_rawDescGZIP() []byte {
 
 var file_aws_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_aws_proto_goTypes = []any{
-	(*Options)(nil),                // 0: aws.v1.Options
-	(*ContainerRegistryLogin)(nil), // 1: aws.v1.ContainerRegistryLogin
-	(*GetTokenRequest)(nil),        // 2: aws.v1.GetTokenRequest
-	(*GetTokenResponse)(nil),       // 3: aws.v1.GetTokenResponse
-	(*timestamppb.Timestamp)(nil),  // 4: google.protobuf.Timestamp
+	(*GetContainerRegistryLoginRequest)(nil), // 0: aws.v1.GetContainerRegistryLoginRequest
+	(*ContainerRegistryLogin)(nil),           // 1: aws.v1.ContainerRegistryLogin
+	(*GetTokenRequest)(nil),                  // 2: aws.v1.GetTokenRequest
+	(*GetTokenResponse)(nil),                 // 3: aws.v1.GetTokenResponse
+	(*timestamppb.Timestamp)(nil),            // 4: google.protobuf.Timestamp
 }
 var file_aws_proto_depIdxs = []int32{
-	4, // 0: aws.v1.ContainerRegistryLogin.expires_at:type_name -> google.protobuf.Timestamp
-	0, // 1: aws.v1.GetTokenRequest.options:type_name -> aws.v1.Options
+	2, // 0: aws.v1.GetContainerRegistryLoginRequest.token_request:type_name -> aws.v1.GetTokenRequest
+	4, // 1: aws.v1.ContainerRegistryLogin.expires_at:type_name -> google.protobuf.Timestamp
 	2, // 2: aws.v1.Bifrost.GetToken:input_type -> aws.v1.GetTokenRequest
-	3, // 3: aws.v1.Bifrost.GetToken:output_type -> aws.v1.GetTokenResponse
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
+	0, // 3: aws.v1.Bifrost.GetContainerRegistryLogin:input_type -> aws.v1.GetContainerRegistryLoginRequest
+	3, // 4: aws.v1.Bifrost.GetToken:output_type -> aws.v1.GetTokenResponse
+	1, // 5: aws.v1.Bifrost.GetContainerRegistryLogin:output_type -> aws.v1.ContainerRegistryLogin
+	4, // [4:6] is the sub-list for method output_type
+	2, // [2:4] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
 	2, // [2:2] is the sub-list for extension extendee
 	0, // [0:2] is the sub-list for field type_name

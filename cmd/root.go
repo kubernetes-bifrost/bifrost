@@ -53,10 +53,12 @@ var rootCmdFlags struct {
 	TLSCAFile          string `json:"tlsCAFile"`
 	TLSSkipVerify      bool   `json:"tlsSkipVerify"`
 	DisableTLS         bool   `json:"disableTLS"`
+	GKEMetadata        string `json:"gkeMetadata"`
 
 	kubeServiceAccountToken string
 	kubeRESTConfig          *rest.Config
 	ctx                     context.Context
+	closeGKEMetadataServer  func() error
 }
 
 var acceptedLogLevels = func() string {
@@ -87,6 +89,8 @@ func init() {
 		"Skip TLS certificate verification")
 	rootCmd.PersistentFlags().BoolVar(&rootCmdFlags.DisableTLS, "disable-tls", false,
 		"Disable TLS")
+	rootCmd.PersistentFlags().StringVarP(&rootCmdFlags.GKEMetadata, "gke-metadata", "g", "",
+		"The GKE metadata to use for token retrieval in the format cluster-project-id/cluster-location/cluster-name")
 }
 
 var rootCmd = &cobra.Command{
@@ -107,10 +111,28 @@ token issuer for service accounts.`,
 		ctx := intoContext(ctrl.SetupSignalHandler(), logger)
 		rootCmdFlags.ctx = ctrl.LoggerInto(ctx, ctrlLogger)
 
+		// Start the GKE metadata server if the flag is set.
+		if md := rootCmdFlags.GKEMetadata; md != "" {
+			close, err := startGKEMetadataServer(md)
+			if err != nil {
+				return fmt.Errorf("failed to start the GKE metadata server: %w", err)
+			}
+			rootCmdFlags.closeGKEMetadataServer = close
+		}
+
 		// Load the kubeconfig.
 		rootCmdFlags.kubeRESTConfig, err = loadKubeConfig()
 		if err != nil {
 			return fmt.Errorf("failed to load kubeconfig: %w", err)
+		}
+		return nil
+	},
+	PersistentPostRunE: func(*cobra.Command, []string) error {
+		// Close the GKE metadata server if it was started.
+		if close := rootCmdFlags.closeGKEMetadataServer; close != nil {
+			if err := close(); err != nil {
+				return fmt.Errorf("failed to close the GKE metadata server: %w", err)
+			}
 		}
 		return nil
 	},

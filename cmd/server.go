@@ -58,32 +58,25 @@ import (
 const metricsNamespace = "bifrost"
 
 var serverCmdFlags struct {
-	port                  int
-	localPort             int
-	defaultAudience       string
-	disableProxy          bool
-	objectCacheSyncPeriod time.Duration
-	tokenCacheMaxSize     int
-	tokenCacheMaxDuration time.Duration
-	gkeMetadata           string
+	port                               int
+	localPort                          int
+	disableProxy                       bool
+	objectCacheSyncPeriod              time.Duration
+	tokenCacheMaxSize                  int
+	tokenCacheMaxDuration              time.Duration
+	gcpDefaultWorkloadIdentityProvider string
 }
 
 func serverCmdFlagsToMap() map[string]any {
-	m := map[string]any{
-		"port":                  serverCmdFlags.port,
-		"localPort":             serverCmdFlags.localPort,
-		"defaultAudience":       serverCmdFlags.defaultAudience,
-		"disableProxy":          serverCmdFlags.disableProxy,
-		"objectCacheSyncPeriod": serverCmdFlags.objectCacheSyncPeriod.String(),
-		"tokenCacheMaxSize":     serverCmdFlags.tokenCacheMaxSize,
-		"tokenCacheMaxDuration": serverCmdFlags.tokenCacheMaxDuration.String(),
+	return map[string]any{
+		"port":                               serverCmdFlags.port,
+		"localPort":                          serverCmdFlags.localPort,
+		"disableProxy":                       serverCmdFlags.disableProxy,
+		"objectCacheSyncPeriod":              serverCmdFlags.objectCacheSyncPeriod.String(),
+		"tokenCacheMaxSize":                  serverCmdFlags.tokenCacheMaxSize,
+		"tokenCacheMaxDuration":              serverCmdFlags.tokenCacheMaxDuration.String(),
+		"gcpDefaultWorkloadIdentityProvider": serverCmdFlags.gcpDefaultWorkloadIdentityProvider,
 	}
-
-	if serverCmdFlags.gkeMetadata != "" {
-		m["gkeMetadata"] = serverCmdFlags.gkeMetadata
-	}
-
-	return m
 }
 
 func init() {
@@ -93,8 +86,6 @@ func init() {
 		"Port to listen on")
 	serverCmd.Flags().IntVar(&serverCmdFlags.localPort, "local-port", 8081,
 		"Port to listen on over plain HTTP for local traffic from gRPC gateway")
-	serverCmd.Flags().StringVar(&serverCmdFlags.defaultAudience, "default-audience", "",
-		"Default audience to use for issuing service account tokens")
 	serverCmd.Flags().BoolVar(&serverCmdFlags.disableProxy, "disable-proxy", false,
 		"Disable the use of HTTP/S proxies for talking to the Security Token Service of cloud providers")
 	serverCmd.Flags().DurationVar(&serverCmdFlags.objectCacheSyncPeriod, "object-cache-sync-period", 10*time.Minute,
@@ -103,8 +94,8 @@ func init() {
 		"Maximum number of tokens to cache. Set to zero to disable caching tokens")
 	serverCmd.Flags().DurationVar(&serverCmdFlags.tokenCacheMaxDuration, "token-cache-max-duration", time.Hour,
 		"Maximum duration to cache tokens")
-
-	bindGKEMetadataServerFlag(serverCmd, &serverCmdFlags.gkeMetadata)
+	serverCmd.Flags().StringVar(&serverCmdFlags.gcpDefaultWorkloadIdentityProvider, "gcp-default-workload-identity-provider", "",
+		"Default GCP workload identity provider to use for issuing tokens")
 }
 
 type service interface {
@@ -146,15 +137,6 @@ server only from pods running on the same node.
 		httpLogger := newHTTPLogger(logger)
 		promLogger := newPromLogger(logger)
 
-		// Start the GKE metadata server if the flag is set.
-		if md := serverCmdFlags.gkeMetadata; md != "" {
-			close, err := startGKEMetadataServer(md)
-			if err != nil {
-				return fmt.Errorf("failed to start GKE metadata server: %w", err)
-			}
-			defer close()
-		}
-
 		// Build bifröst options.
 		var opts []bifröst.Option
 
@@ -165,21 +147,24 @@ server only from pods running on the same node.
 				bifröst.WithMaxDuration(serverCmdFlags.tokenCacheMaxDuration))
 		}
 
-		// Set default audience if provided.
-		if serverCmdFlags.defaultAudience != "" {
-			opts = append(opts, bifröst.WithDefaultAudience(serverCmdFlags.defaultAudience))
-		}
-
-		// Detect if running on GKE and use GCP as the identity provider.
-		gkeDetectionCtx, cancelGKEDetectionCtx := context.WithTimeout(ctx, 3*time.Second)
-		logger.Info("checking if running on GKE")
-		if _, err := (gcp.Provider{}).GetAudience(gkeDetectionCtx); err == nil {
-			logger.Info("GKE cluster detected")
-			opts = append(opts, bifröst.WithIdentityProvider(gcp.Provider{}))
+		// Set default GCP workload identity provider as default audience if provided.
+		if aud := serverCmdFlags.gcpDefaultWorkloadIdentityProvider; aud != "" {
+			if !gcpWorkloadIdentityProviderRegex.MatchString(aud) {
+				return fmt.Errorf("invalid GCP workload identity provider: '%s'. must match %s",
+					aud, gcp.WorkloadIdentityProviderPattern)
+			}
+			opts = append(opts, bifröst.WithDefaultAudience(aud))
 		} else {
-			logger.Info("non-GKE cluster detected")
+			// Detect if running on GKE and use GCP as the identity provider
+			// for getting access to resources in other cloud providers.
+			logger.Info("checking if running on GKE")
+			if _, err := (gcp.Provider{}).GetAudience(ctx); err == nil {
+				logger.Info("GKE cluster detected")
+				opts = append(opts, bifröst.WithIdentityProvider(gcp.Provider{}))
+			} else {
+				logger.Info("non-GKE cluster detected")
+			}
 		}
-		cancelGKEDetectionCtx()
 
 		// Configure HTTP/S proxy settings.
 		if serverCmdFlags.disableProxy {

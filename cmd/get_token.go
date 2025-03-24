@@ -63,8 +63,6 @@ var allowedOutputFormats = strings.Join([]string{
 var getTokenCmdFlags struct {
 	outputFormat       string
 	serviceAccount     string
-	audience           string
-	identityProvider   string
 	proxyURLString     string
 	containerRegistry  string
 	grpcEndpoint       string
@@ -73,12 +71,9 @@ var getTokenCmdFlags struct {
 	outputFormatter   func(any) error
 	serviceAccountObj *corev1.ServiceAccount
 	proxyURL          *url.URL
-
-	opts []bifröst.Option
-
-	debugProxy *http.Server
-
-	grpcClient *grpc.ClientConn
+	opts              []bifröst.Option
+	debugProxy        *http.Server
+	grpcClient        *grpc.ClientConn
 }
 
 func init() {
@@ -88,10 +83,6 @@ func init() {
 		"The output format for the token. Allowed values: "+allowedOutputFormats)
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.serviceAccount, "service-account", "s", "",
 		"A service account name for token exchange")
-	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.audience, "audience", "a", "",
-		"The token audience for the cloud provider")
-	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.identityProvider, "identity-provider", "i", "",
-		"An identity provider for token exchange. Allowed values: "+gcp.ProviderName)
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.proxyURLString, "proxy-url", "p", "",
 		"An HTTP/S proxy URL for talking to the cloud provider Security Token Service. "+
 			"Can also be specified via PROXY_URL environment variable. When set to 'debug' a debug proxy will be started")
@@ -186,14 +177,6 @@ Expires At: %[3]s (%[4]s)
 			}
 		}
 
-		// GCP is the only supported identity provider because it is needed
-		// for allowing GKE clusters to get access on other cloud providers.
-		// All other clusters can use the default identity provider (which
-		// is Kubernetes).
-		if idp := getTokenCmdFlags.identityProvider; idp != "" && idp != gcp.ProviderName {
-			return fmt.Errorf("invalid identity provider: '%s'. allowed providers: %s", idp, gcp.ProviderName)
-		}
-
 		// Parse proxy URL.
 		if getTokenCmdFlags.proxyURLString == "" {
 			getTokenCmdFlags.proxyURLString = os.Getenv("PROXY_URL")
@@ -226,30 +209,27 @@ Expires At: %[3]s (%[4]s)
 		}
 
 		// Build options.
+		var opts []bifröst.Option
 		if serviceAccountRef != nil {
-			getTokenCmdFlags.opts = append(getTokenCmdFlags.opts,
-				bifröst.WithServiceAccount(*serviceAccountRef, kubeClient))
+			opts = append(opts, bifröst.WithServiceAccount(*serviceAccountRef, kubeClient))
 		}
-		if getTokenCmdFlags.audience != "" {
-			getTokenCmdFlags.opts = append(getTokenCmdFlags.opts,
-				bifröst.WithAudience(getTokenCmdFlags.audience))
-		}
-		if getTokenCmdFlags.identityProvider != "" { // Always GCP, see comment above.
-			getTokenCmdFlags.opts = append(getTokenCmdFlags.opts,
-				bifröst.WithIdentityProvider(gcp.Provider{}))
+		if cmd.Name() != gcp.ProviderName {
+			// Detect if running on GKE and use GCP as the identity provider
+			// for getting access to resources in other cloud providers.
+			if _, err := (gcp.Provider{}).GetAudience(ctx); err == nil {
+				opts = append(opts, bifröst.WithIdentityProvider(gcp.Provider{}))
+			}
 		}
 		if getTokenCmdFlags.proxyURL != nil {
-			getTokenCmdFlags.opts = append(getTokenCmdFlags.opts,
-				bifröst.WithProxyURL(*getTokenCmdFlags.proxyURL))
+			opts = append(opts, bifröst.WithProxyURL(*getTokenCmdFlags.proxyURL))
 		}
 		if getTokenCmdFlags.containerRegistry != "" {
-			getTokenCmdFlags.opts = append(getTokenCmdFlags.opts,
-				bifröst.WithContainerRegistry(getTokenCmdFlags.containerRegistry))
+			opts = append(opts, bifröst.WithContainerRegistry(getTokenCmdFlags.containerRegistry))
 		}
 		if getTokenCmdFlags.preferDirectAccess {
-			getTokenCmdFlags.opts = append(getTokenCmdFlags.opts,
-				bifröst.WithPreferDirectAccess())
+			opts = append(opts, bifröst.WithPreferDirectAccess())
 		}
+		getTokenCmdFlags.opts = opts
 
 		// Create gRPC client.
 		if getTokenCmdFlags.grpcEndpoint != "" {

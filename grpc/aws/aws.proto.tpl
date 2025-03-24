@@ -22,7 +22,6 @@
 
 message GetTokenRequest {
 	string value = 1;
-	Options options = 2;
 }
 
 message GetTokenResponse {

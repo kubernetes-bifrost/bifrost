@@ -29,6 +29,10 @@ go mod tidy
 go fmt ./...
 
 # gRPC tools.
+for provider_path in providers/*; do
+    provider=$(basename $provider_path)
+    rm -f grpc/$provider/$provider.proto
+done
 cd grpc
 go mod tidy
 go tool github.com/bufbuild/buf/cmd/buf dep update
