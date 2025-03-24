@@ -7,4 +7,3 @@ terraform.*
 *.tgz
 config.cue
 cov*.out
-!cmd/version.txt
