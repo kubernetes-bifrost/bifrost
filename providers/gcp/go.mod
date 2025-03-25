@@ -6,7 +6,7 @@ replace github.com/kubernetes-bifrost/bifrost => ../..
 
 require (
 	cloud.google.com/go/compute/metadata v0.6.0
-	github.com/kubernetes-bifrost/bifrost v0.16.0
+	github.com/kubernetes-bifrost/bifrost v0.17.0
 	github.com/onsi/gomega v1.36.3
 	golang.org/x/oauth2 v0.28.0
 	google.golang.org/api v0.227.0
