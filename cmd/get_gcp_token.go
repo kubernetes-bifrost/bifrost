@@ -211,10 +211,7 @@ func (gcpService) registerGateway(ctx context.Context, mux *runtime.ServeMux, en
 }
 
 func (gcpService) GetToken(ctx context.Context, req *gcppb.GetTokenRequest) (*gcppb.GetTokenResponse, error) {
-	opts, err := getGCPOptions(ctx, req)
-	if err != nil {
-		return nil, err
-	}
+	opts := getGCPOptions(ctx, req)
 
 	token, err := bifröst.GetToken(ctx, gcp.Provider{}, opts...)
 	if err != nil {
@@ -234,10 +231,7 @@ func (gcpService) GetToken(ctx context.Context, req *gcppb.GetTokenRequest) (*gc
 func (gcpService) GetContainerRegistryLogin(ctx context.Context,
 	req *gcppb.GetContainerRegistryLoginRequest) (*gcppb.ContainerRegistryLogin, error) {
 
-	opts, err := getGCPOptions(ctx, req.GetTokenRequest())
-	if err != nil {
-		return nil, err
-	}
+	opts := getGCPOptions(ctx, req.GetTokenRequest())
 	opts = append(opts, bifröst.WithContainerRegistry(req.GetRegistry()))
 
 	token, err := bifröst.GetToken(ctx, gcp.Provider{}, opts...)
@@ -253,7 +247,7 @@ func (gcpService) GetContainerRegistryLogin(ctx context.Context,
 	}, nil
 }
 
-func getGCPOptions(ctx context.Context, req *gcppb.GetTokenRequest) ([]bifröst.Option, error) {
+func getGCPOptions(ctx context.Context, req *gcppb.GetTokenRequest) []bifröst.Option {
 	opts := optionsFromContext(ctx)
 
 	if wip := req.GetWorkloadIdentityProvider(); wip != "" {
@@ -264,7 +258,7 @@ func getGCPOptions(ctx context.Context, req *gcppb.GetTokenRequest) ([]bifröst.
 		opts = append(opts, bifröst.WithProviderOptions(gcp.WithServiceAccountEmail(email)))
 	}
 
-	return opts, nil
+	return opts
 }
 
 // ===================
