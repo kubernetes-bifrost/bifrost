@@ -95,6 +95,7 @@ git add .
 git commit -asm "Release $new_version"
 git push --set-upstream origin release
 gh pr create --base main --head release --fill-verbose
+echo ""
 
 # Now wait on a loop until the PR is merged.
 while true; do
