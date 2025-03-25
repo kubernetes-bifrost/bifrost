@@ -25,15 +25,11 @@ package bifröst
 const (
 	// APIGroup is the API group for the bifrost-k8s.io API.
 	APIGroup = "bifrost-k8s.io"
-	// APIGroupServiceAccounts is the API group for service account related annotations.
-	APIGroupServiceAccounts = "serviceaccounts." + APIGroup
 
-	// ServiceAccountAudience is the annotation key for the audience of the service account token.
-	// Should be an audience that the target cloud provider will accept for giving back an access token.
-	ServiceAccountAudience = APIGroupServiceAccounts + "/audience"
 	// ServiceAccountTokenSecretName is the annotation key for the name of the secret
 	// containing a proxy address, username and password for using when issuing access tokens.
-	ServiceAccountProxySecretName = APIGroupServiceAccounts + "/proxySecretName"
+	// Username and password are optional.
+	ServiceAccountProxySecretName = APIGroup + "/proxySecretName"
 
 	// ProxySecretKeyAddress is the key containing the proxy address in the secret.
 	ProxySecretKeyAddress = "address"

@@ -247,25 +247,93 @@ func TestProvider_NewDefaultAccessToken(t *testing.T) {
 
 func TestProvider_GetAudience(t *testing.T) {
 	for _, tt := range []struct {
-		name             string
-		err              bool
-		expectedAudience string
-		expectErr        bool
+		name                 string
+		opts                 []bifröst.Option
+		serviceAccount       *corev1.ServiceAccount
+		gkeMetadataServerErr bool
+		expectedAudience     string
+		expectedErr          string
 	}{
 		{
-			name:      "error",
-			err:       true,
-			expectErr: true,
+			name: "audience from options has precedence over service account annotation",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(gcp.WithWorkloadIdentityProvider("projects/1234/locations/global/workloadIdentityPools/pool/providers/options")),
+				bifröst.WithProviderOptions(gcp.WithDefaultWorkloadIdentityProvider("projects/1234/locations/global/workloadIdentityPools/pool/providers/default")),
+			},
+			serviceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"gcp.bifrost-k8s.io/workloadIdentityProvider": "projects/1234/locations/global/workloadIdentityPools/pool/providers/sa",
+					},
+				},
+			},
+			expectedAudience: "https://iam.googleapis.com/projects/1234/locations/global/workloadIdentityPools/pool/providers/options",
 		},
 		{
-			name:             "success",
+			name: "invalid audience from options",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(gcp.WithWorkloadIdentityProvider("projects1234/locations/global/workloadIdentityPools/pool/providers/options")),
+				bifröst.WithProviderOptions(gcp.WithDefaultWorkloadIdentityProvider("projects/1234/locations/global/workloadIdentityPools/pool/providers/default")),
+			},
+			serviceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"gcp.bifrost-k8s.io/workloadIdentityProvider": "projects/1234/locations/global/workloadIdentityPools/pool/providers/sa",
+					},
+				},
+			},
+			expectedErr: "invalid GCP workload identity provider: 'projects1234/locations/global/workloadIdentityPools/pool/providers/options'. must match ^((https:)?//iam.googleapis.com/)?projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
+		},
+		{
+			name: "audience from service account annotation has precedence over default audience",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(gcp.WithDefaultWorkloadIdentityProvider("projects/1234/locations/global/workloadIdentityPools/pool/providers/default")),
+			},
+			serviceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"gcp.bifrost-k8s.io/workloadIdentityProvider": "projects/1234/locations/global/workloadIdentityPools/pool/providers/sa",
+					},
+				},
+			},
+			expectedAudience: "https://iam.googleapis.com/projects/1234/locations/global/workloadIdentityPools/pool/providers/sa",
+		},
+		{
+			name: "invalid audience from service account annotation",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(gcp.WithDefaultWorkloadIdentityProvider("projects/1234/locations/global/workloadIdentityPools/pool/providers/default")),
+			},
+			serviceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"gcp.bifrost-k8s.io/workloadIdentityProvider": "projects/1234locations/global/workloadIdentityPools/pool/providers/sa",
+					},
+				},
+			},
+			expectedErr: "invalid GCP workload identity provider: 'projects/1234locations/global/workloadIdentityPools/pool/providers/sa'. must match ^((https:)?//iam.googleapis.com/)?projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
+		},
+		{
+			name: "default audience has precedence over gke audience",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(gcp.WithDefaultWorkloadIdentityProvider("projects/1234/locations/global/workloadIdentityPools/pool/providers/default")),
+			},
+			expectedAudience: "https://iam.googleapis.com/projects/1234/locations/global/workloadIdentityPools/pool/providers/default",
+		},
+		{
+			name: "invalid default audience",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(gcp.WithDefaultWorkloadIdentityProvider("projects/1234/locationsglobal/workloadIdentityPools/pool/providers/default")),
+			},
+			expectedErr: "invalid GCP workload identity provider: 'projects/1234/locationsglobal/workloadIdentityPools/pool/providers/default'. must match ^((https:)?//iam.googleapis.com/)?projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
+		},
+		{
+			name:             "gke audience",
 			expectedAudience: "provider-get-audience-project-id.svc.id.goog",
 		},
 		{
-			name:             "only loads once",
-			err:              true,
-			expectedAudience: "provider-get-audience-project-id.svc.id.goog",
-			expectErr:        false,
+			name:                 "error on getting gke metadata",
+			gkeMetadataServerErr: true,
+			expectedErr:          "failed to get GKE cluster project ID from the metadata service: metadata",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -275,15 +343,17 @@ func TestProvider_GetAudience(t *testing.T) {
 				projectID:    "provider-get-audience-project-id",
 				location:     "provider-get-audience-location",
 				name:         "provider-get-audience-name",
-				projectIDErr: tt.err,
-				locationErr:  tt.err,
-				nameErr:      tt.err,
+				projectIDErr: tt.gkeMetadataServerErr,
+				locationErr:  tt.gkeMetadataServerErr,
+				nameErr:      tt.gkeMetadataServerErr,
 			}).start(t)
 
-			audience, err := gcp.Provider{}.GetAudience(context.Background())
+			opts := append(tt.opts, bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{})))
+			audience, err := gcp.Provider{}.GetAudience(context.Background(), tt.serviceAccount, opts...)
 
-			if tt.expectErr {
+			if tt.expectedErr != "" {
 				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.expectedErr))
 			} else {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(audience).To(Equal(tt.expectedAudience))
@@ -301,6 +371,16 @@ func TestProvider_NewAccessToken(t *testing.T) {
 		expectedToken  bifröst.Token
 		expectedErr    string
 	}{
+		{
+			name: "error due to invalid workload identity provider",
+			opts: []bifröst.Option{
+				bifröst.WithProviderOptions(
+					gcp.WithImplementation(&mockImpl{}),
+					gcp.WithWorkloadIdentityProvider("invalid-provider")),
+			},
+			gkeMetadataErr: true,
+			expectedErr:    "invalid GCP workload identity provider: 'invalid-provider'. must match ^((https:)?//iam.googleapis.com/)?projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
+		},
 		{
 			name: "error on getting audience from gke metadata",
 			opts: []bifröst.Option{
@@ -494,6 +574,106 @@ func TestProvider_NewIdentityToken(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseWorkloadIdentityProvider(t *testing.T) {
+	for _, tt := range []struct {
+		name                     string
+		workloadIdentityProvider string
+		expectedAudience         string
+		expectedErr              string
+	}{
+		{
+			name:                     "has https: prefix",
+			workloadIdentityProvider: "https://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
+			expectedAudience:         "https://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
+		},
+		{
+			name:                     "has only //iam.googleapis.com/ prefix",
+			workloadIdentityProvider: "//iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
+			expectedAudience:         "https://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
+		},
+		{
+			name:                     "has only the provider full name",
+			workloadIdentityProvider: "projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
+			expectedAudience:         "https://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
+		},
+		{
+			name:                     "has http instead of https",
+			workloadIdentityProvider: "http://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
+			expectedErr:              "invalid GCP workload identity provider: 'http://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster'. must match ^((https:)?//iam.googleapis.com/)?projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			audience, err := gcp.ParseWorkloadIdentityProvider(tt.workloadIdentityProvider)
+
+			if tt.expectedErr != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.expectedErr))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(audience).To(Equal(tt.expectedAudience))
+			}
+		})
+	}
+}
+
+func TestOnGKE(t *testing.T) {
+	t.Run("not on GKE, timeout", func(t *testing.T) {
+		g := NewWithT(t)
+		start := time.Now()
+		ok := gcp.OnGKE(context.Background())
+		latency := time.Since(start)
+		g.Expect(ok).To(BeFalse())
+		g.Expect(latency).To(BeNumerically("~", time.Second, 400*time.Millisecond))
+	})
+
+	t.Run("on GKE, but metadata service errors", func(t *testing.T) {
+		g := NewWithT(t)
+
+		(&gkeMetadataServer{
+			projectID:    "ongke-project-id",
+			location:     "ongke-location",
+			name:         "ongke-name",
+			projectIDErr: true,
+			locationErr:  true,
+			nameErr:      true,
+		}).start(t)
+
+		start := time.Now()
+		ok := gcp.OnGKE(context.Background())
+		latency := time.Since(start)
+		g.Expect(ok).To(BeFalse())
+		g.Expect(latency).To(BeNumerically("~", 0, 200*time.Millisecond))
+	})
+
+	t.Run("on GKE, success", func(t *testing.T) {
+		g := NewWithT(t)
+
+		(&gkeMetadataServer{
+			projectID: "ongke-project-id",
+			location:  "ongke-location",
+			name:      "ongke-name",
+		}).start(t)
+
+		start := time.Now()
+		ok := gcp.OnGKE(context.Background())
+		latency := time.Since(start)
+		g.Expect(ok).To(BeTrue())
+		g.Expect(latency).To(BeNumerically("~", 0, 200*time.Millisecond))
+	})
+
+	t.Run("on GKE, cached", func(t *testing.T) {
+		g := NewWithT(t)
+
+		start := time.Now()
+		ok := gcp.OnGKE(context.Background())
+		latency := time.Since(start)
+		g.Expect(ok).To(BeTrue())
+		g.Expect(latency).To(BeNumerically("~", 0, 10*time.Millisecond))
+	})
 }
 
 func TestGKEMetadata_GetAudience(t *testing.T) {

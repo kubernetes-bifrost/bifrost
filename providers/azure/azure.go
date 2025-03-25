@@ -22,4 +22,7 @@
 
 package azure
 
+// ProviderName is the name of the provider.
+const ProviderName = "azure"
+
 type Provider struct{}

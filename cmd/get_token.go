@@ -85,7 +85,8 @@ func init() {
 		"A service account name for token exchange")
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.proxyURLString, "proxy-url", "p", "",
 		"An HTTP/S proxy URL for talking to the cloud provider Security Token Service. "+
-			"Can also be specified via PROXY_URL environment variable. When set to 'debug' a debug proxy will be started")
+			fmt.Sprintf("Can also be specified via the %s environment variable. ", envProxyURL)+
+			"When set to 'debug' a debug proxy will be started")
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.containerRegistry, "container-registry", "c", "",
 		"A container registry host. When specified a username and password for the registry will be retrieved")
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.grpcEndpoint, "grpc-endpoint", "", "",
@@ -179,7 +180,7 @@ Expires At: %[3]s (%[4]s)
 
 		// Parse proxy URL.
 		if getTokenCmdFlags.proxyURLString == "" {
-			getTokenCmdFlags.proxyURLString = os.Getenv("PROXY_URL")
+			getTokenCmdFlags.proxyURLString = os.Getenv(envProxyURL)
 		}
 		if getTokenCmdFlags.proxyURLString != "" {
 			if getTokenCmdFlags.proxyURLString == "debug" {
@@ -214,9 +215,9 @@ Expires At: %[3]s (%[4]s)
 			opts = append(opts, bifröst.WithServiceAccount(*serviceAccountRef, kubeClient))
 		}
 		if cmd.Name() != gcp.ProviderName {
-			// Detect if running on GKE and use GCP as the identity provider
+			// Detect if running on GKE. If yes, use GCP as the identity provider
 			// for getting access to resources in other cloud providers.
-			if _, err := (gcp.Provider{}).GetAudience(ctx); err == nil {
+			if gcp.OnGKE(ctx) {
 				opts = append(opts, bifröst.WithIdentityProvider(gcp.Provider{}))
 			}
 		}

@@ -207,7 +207,7 @@ func TestGetToken(t *testing.T) {
 			Name:      "invalid-proxy-secret",
 			Namespace: "default",
 			Annotations: map[string]string{
-				"serviceaccounts.bifrost-k8s.io/proxySecretName": "non-existing",
+				"bifrost-k8s.io/proxySecretName": "non-existing",
 			},
 		},
 	}
@@ -220,7 +220,7 @@ func TestGetToken(t *testing.T) {
 			Name:      "missing-proxy-address",
 			Namespace: "default",
 			Annotations: map[string]string{
-				"serviceaccounts.bifrost-k8s.io/proxySecretName": "missing-proxy-address",
+				"bifrost-k8s.io/proxySecretName": "missing-proxy-address",
 			},
 		},
 	}
@@ -242,7 +242,7 @@ func TestGetToken(t *testing.T) {
 			Name:      "invalid-proxy-address",
 			Namespace: "default",
 			Annotations: map[string]string{
-				"serviceaccounts.bifrost-k8s.io/proxySecretName": "invalid-proxy-address",
+				"bifrost-k8s.io/proxySecretName": "invalid-proxy-address",
 			},
 		},
 	}
@@ -266,7 +266,7 @@ func TestGetToken(t *testing.T) {
 			Name:      "missing-proxy-password",
 			Namespace: "default",
 			Annotations: map[string]string{
-				"serviceaccounts.bifrost-k8s.io/proxySecretName": "missing-proxy-password",
+				"bifrost-k8s.io/proxySecretName": "missing-proxy-password",
 			},
 		},
 	}
@@ -291,7 +291,7 @@ func TestGetToken(t *testing.T) {
 			Name:      "missing-proxy-username",
 			Namespace: "default",
 			Annotations: map[string]string{
-				"serviceaccounts.bifrost-k8s.io/proxySecretName": "missing-proxy-username",
+				"bifrost-k8s.io/proxySecretName": "missing-proxy-username",
 			},
 		},
 	}
@@ -329,7 +329,7 @@ func TestGetToken(t *testing.T) {
 			Name:      "proxy-secret",
 			Namespace: "default",
 			Annotations: map[string]string{
-				"serviceaccounts.bifrost-k8s.io/proxySecretName": "proxy-secret",
+				"bifrost-k8s.io/proxySecretName": "proxy-secret",
 			},
 		},
 	}
@@ -807,74 +807,6 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &bifröst.ContainerRegistryLogin{Username: "registry-identity-token-access-token"},
 		},
 		{
-			name: "audience from options has precedence over service account annotation",
-			provider: mockProvider{
-				audience:        "provider-audience",
-				tokenAudience:   "option-audience",
-				tokenOIDCClient: oidcClient,
-				token:           &mockToken{value: "option-audience-token"},
-			},
-			opts: []bifröst.Option{
-				bifröst.WithServiceAccount(client.ObjectKey{
-					Name:      "sa-audience",
-					Namespace: "default",
-				}, kubeClient),
-				bifröst.WithAudience("option-audience"),
-				bifröst.WithDefaultAudience("default-audience"),
-			},
-			expectedToken: &mockToken{value: "option-audience-token"},
-		},
-		{
-			name: "audience from service account annotation has precedence over default audience",
-			provider: mockProvider{
-				audience:        "provider-audience",
-				tokenAudience:   "sa-audience",
-				tokenOIDCClient: oidcClient,
-				token:           &mockToken{value: "sa-audience-token"},
-			},
-			opts: []bifröst.Option{
-				bifröst.WithServiceAccount(client.ObjectKey{
-					Name:      "sa-audience",
-					Namespace: "default",
-				}, kubeClient),
-				bifröst.WithDefaultAudience("default-audience"),
-			},
-			expectedToken: &mockToken{value: "sa-audience-token"},
-		},
-		{
-			name: "default audience has precedence over provider",
-			provider: mockProvider{
-				audience:        "provider-audience",
-				tokenAudience:   "default-audience",
-				tokenOIDCClient: oidcClient,
-				token:           &mockToken{value: "sa-audience-token"},
-			},
-			opts: []bifröst.Option{
-				bifröst.WithServiceAccount(client.ObjectKey{
-					Name:      "default",
-					Namespace: "default",
-				}, kubeClient),
-				bifröst.WithDefaultAudience("default-audience"),
-			},
-			expectedToken: &mockToken{value: "sa-audience-token"},
-		},
-		{
-			name: "audience from provider",
-			provider: mockProvider{
-				audience:        "provider-audience",
-				tokenAudience:   "provider-audience",
-				tokenOIDCClient: oidcClient,
-				token:           &mockToken{value: "provider-audience-token"},
-			},
-			opts: []bifröst.Option{
-				bifröst.WithServiceAccount(client.ObjectKey{
-					Name:      "default",
-					Namespace: "default",
-				}, kubeClient),
-			},
-			expectedToken: &mockToken{value: "provider-audience-token"},
-		},
-		{
 			name: "proxy URL from options has priority over service account annotation",
 			provider: mockProvider{
 				audience:        "provider-audience",
@@ -1045,7 +977,7 @@ func (m *mockProvider) NewDefaultAccessToken(ctx context.Context, opts ...bifrö
 	return m.defaultToken, nil
 }
 
-func (m *mockProvider) GetAudience(ctx context.Context) (string, error) {
+func (m *mockProvider) GetAudience(context.Context, *corev1.ServiceAccount, ...bifröst.Option) (string, error) {
 	if m.audienceErr {
 		return "", mockErr
 	}

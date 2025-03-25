@@ -31,7 +31,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -39,18 +38,11 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
 	gcppb "github.com/kubernetes-bifrost/bifrost/grpc/gcp/go"
 	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
-)
-
-var (
-	gcpWorkloadIdentityProviderRegex = regexp.MustCompile(gcp.WorkloadIdentityProviderPattern)
-	gcpServiceAccountEmailRegex      = regexp.MustCompile(gcp.ServiceAccountEmailPattern)
 )
 
 var getGCPTokenCmdFlags struct {
@@ -72,20 +64,6 @@ var getGCPTokenCmd = &cobra.Command{
 	Short: "Get a token for accessing resources on GCP.",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx := rootCmdFlags.ctx
-
-		if aud := getGCPTokenCmdFlags.workloadIdentityProvider; aud != "" {
-			if !gcpWorkloadIdentityProviderRegex.MatchString(aud) {
-				return fmt.Errorf("invalid GCP workload identity provider: '%s'. must match %s",
-					aud, gcp.WorkloadIdentityProviderPattern)
-			}
-		}
-
-		if email := getGCPTokenCmdFlags.serviceAccountEmail; email != "" {
-			if !gcpServiceAccountEmailRegex.MatchString(email) {
-				return fmt.Errorf("invalid GCP service account email: '%s'. must match %s",
-					email, gcp.ServiceAccountEmailPattern)
-			}
-		}
 
 		var token bifröst.Token
 		var err error
@@ -160,8 +138,8 @@ Expires At:   %[2]s (%[3]s)
 func issueGCPToken(ctx context.Context) (bifröst.Token, error) {
 	opts := getTokenCmdFlags.opts
 
-	if aud := getGCPTokenCmdFlags.workloadIdentityProvider; aud != "" {
-		opts = append(opts, bifröst.WithAudience(aud))
+	if wip := getGCPTokenCmdFlags.workloadIdentityProvider; wip != "" {
+		opts = append(opts, bifröst.WithProviderOptions(gcp.WithWorkloadIdentityProvider(wip)))
 	}
 
 	if email := getGCPTokenCmdFlags.serviceAccountEmail; email != "" {
@@ -278,21 +256,11 @@ func (gcpService) GetContainerRegistryLogin(ctx context.Context,
 func getGCPOptions(ctx context.Context, req *gcppb.GetTokenRequest) ([]bifröst.Option, error) {
 	opts := optionsFromContext(ctx)
 
-	if aud := req.GetWorkloadIdentityProvider(); aud != "" {
-		if !gcpWorkloadIdentityProviderRegex.MatchString(aud) {
-			return nil, status.Errorf(codes.InvalidArgument,
-				"invalid GCP workload identity provider: '%s'. must match %s",
-				aud, gcp.WorkloadIdentityProviderPattern)
-		}
-		opts = append(opts, bifröst.WithAudience(aud))
+	if wip := req.GetWorkloadIdentityProvider(); wip != "" {
+		opts = append(opts, bifröst.WithProviderOptions(gcp.WithWorkloadIdentityProvider(wip)))
 	}
 
 	if email := req.GetServiceAccountEmail(); email != "" {
-		if !gcpServiceAccountEmailRegex.MatchString(email) {
-			return nil, status.Errorf(codes.InvalidArgument,
-				"invalid GCP service account email: '%s'. must match %s",
-				email, gcp.ServiceAccountEmailPattern)
-		}
 		opts = append(opts, bifröst.WithProviderOptions(gcp.WithServiceAccountEmail(email)))
 	}
 

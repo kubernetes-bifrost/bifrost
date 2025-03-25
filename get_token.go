@@ -61,13 +61,10 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 		}
 
 		// Get provider audience.
-		providerAudience = o.GetAudience(serviceAccount)
-		if providerAudience == "" {
-			var err error
-			providerAudience, err = provider.GetAudience(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get provider audience: %w", err)
-			}
+		var err error
+		providerAudience, err = provider.GetAudience(ctx, serviceAccount, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get provider audience: %w", err)
 		}
 
 		// Initialize a function for creating the identity token that will be exchanged
@@ -81,7 +78,7 @@ func GetToken(ctx context.Context, provider Provider, opts ...Option) (Token, er
 		// for creating the identity token to use the identity provider.
 		if identityProvider = o.GetIdentityProvider(); identityProvider != nil {
 			var err error
-			identityProviderAudience, err = identityProvider.GetAudience(ctx)
+			identityProviderAudience, err = identityProvider.GetAudience(ctx, serviceAccount, opts...)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get identity provider audience: %w", err)
 			}

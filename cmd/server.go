@@ -148,17 +148,17 @@ server only from pods running on the same node.
 		}
 
 		// Set default GCP workload identity provider as default audience if provided.
-		if aud := serverCmdFlags.gcpDefaultWorkloadIdentityProvider; aud != "" {
-			if !gcpWorkloadIdentityProviderRegex.MatchString(aud) {
-				return fmt.Errorf("invalid GCP workload identity provider: '%s'. must match %s",
-					aud, gcp.WorkloadIdentityProviderPattern)
+		if wip := serverCmdFlags.gcpDefaultWorkloadIdentityProvider; wip != "" {
+			wip, err := gcp.ParseWorkloadIdentityProvider(wip)
+			if err != nil {
+				return err
 			}
-			opts = append(opts, bifröst.WithDefaultAudience(aud))
+			opts = append(opts, bifröst.WithProviderOptions(gcp.WithDefaultWorkloadIdentityProvider(wip)))
 		} else {
-			// Detect if running on GKE and use GCP as the identity provider
+			// Detect if running on GKE. If yes, use GCP as the identity provider
 			// for getting access to resources in other cloud providers.
 			logger.Info("checking if running on GKE")
-			if _, err := (gcp.Provider{}).GetAudience(ctx); err == nil {
+			if gcp.OnGKE(ctx) {
 				logger.Info("GKE cluster detected")
 				opts = append(opts, bifröst.WithIdentityProvider(gcp.Provider{}))
 			} else {
@@ -169,7 +169,7 @@ server only from pods running on the same node.
 		// Configure HTTP/S proxy settings.
 		if serverCmdFlags.disableProxy {
 			opts = append(opts, bifröst.WithProxyURL(url.URL{}))
-		} else if env := os.Getenv("BIFROST_PROXY_URL"); env != "" {
+		} else if env := os.Getenv(envProxyURL); env != "" {
 			proxyURL, err := url.Parse(env)
 			if err != nil {
 				return fmt.Errorf("failed to parse proxy URL: %w", err)
