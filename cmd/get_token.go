@@ -98,7 +98,7 @@ func init() {
 
 var getTokenCmd = &cobra.Command{
 	Use:   "token",
-	Short: "Get a token for accessing resources on a cloud provider.",
+	Short: "Get a token for accessing resources on a cloud provider",
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		ctx := rootCmdFlags.ctx
 

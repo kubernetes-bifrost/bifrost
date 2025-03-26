@@ -24,6 +24,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -129,6 +130,13 @@ server only from pods running on the same node.
 		logger := *fromContext(ctx)
 		httpLogger := newHTTPLogger(logger)
 		promLogger := newPromLogger(logger)
+
+		// Validate TLS settings.
+		if !rootCmdFlags.DisableTLS {
+			if _, err := tls.LoadX509KeyPair(rootCmdFlags.TLSCertFile, rootCmdFlags.TLSKeyFile); err != nil {
+				return fmt.Errorf("failed to load TLS key pair: %w", err)
+			}
+		}
 
 		// Build bifröst options.
 		var opts []bifröst.Option
