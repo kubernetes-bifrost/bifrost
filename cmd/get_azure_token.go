@@ -21,30 +21,3 @@
 // SOFTWARE.
 
 package main
-
-import (
-	"context"
-	"fmt"
-
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"google.golang.org/grpc"
-
-	azurepb "github.com/kubernetes-bifrost/bifrost/grpc/azure/go"
-)
-
-type azureService struct {
-	azurepb.UnimplementedBifrostServer
-}
-
-func (a azureService) register(server *grpc.Server) {
-	azurepb.RegisterBifrostServer(server, a)
-}
-
-func (azureService) registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
-	return azurepb.RegisterBifrostHandlerFromEndpoint(ctx, mux, endpoint, opts)
-}
-
-func (azureService) GetToken(ctx context.Context, req *azurepb.GetTokenRequest) (*azurepb.GetTokenResponse, error) {
-	fmt.Println("yahoo azure!", req.GetValue())
-	return &azurepb.GetTokenResponse{}, nil
-}

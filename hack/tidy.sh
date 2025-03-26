@@ -28,58 +28,23 @@ set -ex
 go mod tidy
 go fmt ./...
 
-# gRPC tools.
+# Provider modules.
 for provider_path in providers/*; do
-    provider=$(basename $provider_path)
-    rm -f grpc/$provider/$provider.proto
-done
-cd grpc
-go mod tidy
-go tool github.com/bufbuild/buf/cmd/buf dep update
-cd -
-
-# gRPC proto for main service.
-cd grpc/bifrost
-find ../ -maxdepth 1 -type f -exec cp {} . \;
-rm bifrost.proto.tpl
-go tool github.com/bufbuild/buf/cmd/buf generate
-cd -
-
-# gRPC gen for main service.
-cd grpc/bifrost/go
-go mod tidy
-cd -
-
-# Providers.
-for provider_path in providers/*; do
-    provider=$(basename $provider_path)
-
-    # Module.
     cd $provider_path
     go mod tidy
     go fmt ./...
     cd -
-
-    # gRPC proto.
-    if ! cd grpc/$provider; then
-        continue
-    fi
-    find ../ -maxdepth 1 -type f -exec cp {} . \;
-    mv bifrost.proto.tpl $provider.proto
-    echo "" >> $provider.proto
-    cat $provider.proto.tpl >> $provider.proto
-    sed -i.bak "s/PROVIDER/$provider/g" $provider.proto && rm $provider.proto.bak
-    go tool github.com/bufbuild/buf/cmd/buf generate
-    cd -
-
-    # gRPC gen.
-    cd grpc/$provider/go
-    if [ ! -f go.mod ]; then
-        go mod init github.com/kubernetes-bifrost/bifrost/grpc/$provider/go
-    fi
-    go mod tidy
-    cd -
 done
+
+# gRPC modules.
+cd grpc
+go mod tidy
+go tool github.com/bufbuild/buf/cmd/buf dep update
+go tool github.com/bufbuild/buf/cmd/buf generate
+cd -
+cd grpc/go
+go mod tidy
+cd -
 
 # Binary.
 cd cmd

@@ -21,30 +21,3 @@
 // SOFTWARE.
 
 package main
-
-import (
-	"context"
-	"fmt"
-
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"google.golang.org/grpc"
-
-	awspb "github.com/kubernetes-bifrost/bifrost/grpc/aws/go"
-)
-
-type awsService struct {
-	awspb.UnimplementedBifrostServer
-}
-
-func (a awsService) register(server *grpc.Server) {
-	awspb.RegisterBifrostServer(server, a)
-}
-
-func (awsService) registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
-	return awspb.RegisterBifrostHandlerFromEndpoint(ctx, mux, endpoint, opts)
-}
-
-func (awsService) GetToken(ctx context.Context, req *awspb.GetTokenRequest) (*awspb.GetTokenResponse, error) {
-	fmt.Println("yahoo aws!", req.GetValue())
-	return &awspb.GetTokenResponse{}, nil
-}

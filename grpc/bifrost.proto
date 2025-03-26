@@ -20,12 +20,61 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+syntax = "proto3";
+
+package bifrost.v1;
+
+option go_package = "github.com/kubernetes-bifrost/bifrost/grpc/go;bifröstpb";
+
+import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
+
+service Bifrost {
+	rpc GetVersion (GetVersionRequest) returns (GetVersionResponse) {
+		option (google.api.http) = {
+			get: "/v1/version"
+		};
+	}
+
+	rpc GetToken (GetTokenRequest) returns (GetTokenResponse) {
+		option (google.api.http) = {
+			get: "/v1/token"
+		};
+	}
+}
+
+message ContainerRegistryLogin {
+	string username = 1;
+	string password = 2;
+	google.protobuf.Timestamp expires_at = 3;
+}
+
+message GetVersionRequest {}
+
+message GetVersionResponse {
+	string version = 1;
+}
+
 message GetTokenRequest {
+	string container_registry = 1;
+	oneof provider_params {
+		GCPParams GCP = 2;
+	}
+}
+
+message GetTokenResponse {
+	oneof token {
+		ContainerRegistryLogin registry_login = 1;
+		GCPToken GCP = 2;
+	}
+}
+
+message GCPParams {
 	string workloadIdentityProvider = 1;
 	string serviceAccountEmail = 2;
 }
 
-message GetTokenResponse {
+message GCPToken {
 	string access_token = 1;
 	string token_type = 2;
 	string refresh_token = 3;
