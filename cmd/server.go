@@ -34,8 +34,6 @@ import (
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	bifröst "github.com/kubernetes-bifrost/bifrost"
-	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -45,17 +43,24 @@ import (
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
-	authnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	bifröst "github.com/kubernetes-bifrost/bifrost"
+	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 )
 
-const metricsNamespace = "bifrost"
+const (
+	metricsNamespace               = "bifrost"
+	metadataKeyRemoteAddr          = "remote-addr"
+	metadataKeyServiceAccountToken = "service-account-token"
+	httpHeaderServiceAccountToken  = "X-Service-Account-Token"
+)
 
 var serverCmdFlags struct {
 	port                               int
@@ -67,8 +72,8 @@ var serverCmdFlags struct {
 	gcpDefaultWorkloadIdentityProvider string
 }
 
-func serverCmdFlagsToMap() map[string]any {
-	return map[string]any{
+func serverCmdFlagsForLogger() logrus.Fields {
+	return logrus.Fields{
 		"port":                               serverCmdFlags.port,
 		"localPort":                          serverCmdFlags.localPort,
 		"disableProxy":                       serverCmdFlags.disableProxy,
@@ -96,18 +101,6 @@ func init() {
 		"Maximum duration to cache tokens")
 	serverCmd.Flags().StringVar(&serverCmdFlags.gcpDefaultWorkloadIdentityProvider, "gcp-default-workload-identity-provider", "",
 		"Default GCP workload identity provider to use for issuing tokens")
-}
-
-type service interface {
-	register(server *grpc.Server)
-	registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error
-}
-
-var services = []service{
-	bifrostService{},
-	awsService{},
-	azureService{},
-	gcpService{},
 }
 
 var serverCmd = &cobra.Command{
@@ -140,11 +133,15 @@ server only from pods running on the same node.
 		// Build bifröst options.
 		var opts []bifröst.Option
 
-		// Set token cache options if provided.
-		var cache bifröst.Cache
-		if serverCmdFlags.tokenCacheMaxSize > 0 {
-			cache = bifröst.NewCache(serverCmdFlags.tokenCacheMaxSize,
-				bifröst.WithMaxDuration(serverCmdFlags.tokenCacheMaxDuration))
+		// Configure HTTP/S proxy settings.
+		if serverCmdFlags.disableProxy {
+			opts = append(opts, bifröst.WithProxyURL(url.URL{}))
+		} else if env := os.Getenv(envProxyURL); env != "" {
+			proxyURL, err := url.Parse(env)
+			if err != nil {
+				return fmt.Errorf("failed to parse proxy URL: %w", err)
+			}
+			opts = append(opts, bifröst.WithProxyURL(*proxyURL))
 		}
 
 		// Set default GCP workload identity provider as default audience if provided.
@@ -166,17 +163,6 @@ server only from pods running on the same node.
 			}
 		}
 
-		// Configure HTTP/S proxy settings.
-		if serverCmdFlags.disableProxy {
-			opts = append(opts, bifröst.WithProxyURL(url.URL{}))
-		} else if env := os.Getenv(envProxyURL); env != "" {
-			proxyURL, err := url.Parse(env)
-			if err != nil {
-				return fmt.Errorf("failed to parse proxy URL: %w", err)
-			}
-			opts = append(opts, bifröst.WithProxyURL(*proxyURL))
-		}
-
 		// Create Kubernetes client.
 		logger.Info("starting kubernetes cache")
 		kubeClient, err := newServerKubeClient(ctx)
@@ -186,7 +172,7 @@ server only from pods running on the same node.
 		logger.Info("kubernetes cache started")
 
 		// Create metrics.
-		serverLatencySecs := promauto.NewSummaryVec(prometheus.SummaryOpts{
+		serviceLatencySecs := promauto.NewSummaryVec(prometheus.SummaryOpts{
 			Help:      "gRPC server request latency in seconds.",
 			Namespace: metricsNamespace,
 			Subsystem: "grpc",
@@ -199,20 +185,25 @@ server only from pods running on the same node.
 			Name:      "request_latency_seconds",
 		}, []string{"method", "path", "status"})
 
-		// Configure gRPC services.
-		observabilityInterceptor := newServerObservabilityInterceptor(serverLatencySecs, logger)
-		optionsInterceptor := newServerOptionsInterceptor(kubeClient, cache, opts)
-		grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(observabilityInterceptor, optionsInterceptor))
-		gwMux := runtime.NewServeMux(runtime.WithMetadata(getGatewayMetadata))
-		gwDialOpts := []grpc.DialOption{
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithUnaryInterceptor(gatewayInterceptor),
+		// Create token cache if enabled.
+		var cache bifröst.Cache
+		if serverCmdFlags.tokenCacheMaxSize > 0 {
+			cache = bifröst.NewCache(serverCmdFlags.tokenCacheMaxSize,
+				bifröst.WithMaxDuration(serverCmdFlags.tokenCacheMaxDuration))
 		}
-		for _, service := range services {
-			service.register(grpcServer)
-			if err := service.registerGateway(ctx, gwMux, localAddr, gwDialOpts); err != nil {
-				return err
-			}
+
+		// Configure gRPC service and gateway.
+		observabilityInterceptor := newServerObservabilityInterceptor(serviceLatencySecs, logger)
+		serviceHandler := grpc.NewServer(grpc.ChainUnaryInterceptor(observabilityInterceptor))
+		gatewayOpts := []runtime.ServeMuxOption{
+			runtime.WithIncomingHeaderMatcher(gatewayHeaderMatcher),
+			runtime.WithMetadata(gatewayMetadata),
+		}
+		gatewayMux := runtime.NewServeMux(gatewayOpts...)
+		gatewayHandler := newGatewayObservabilityMiddleware(gatewayLatencySecs, gatewayMux)
+		err = registerBifrostService(ctx, kubeClient, cache, opts, serviceHandler, gatewayMux, localAddr)
+		if err != nil {
+			return err
 		}
 
 		// Create metrics handler.
@@ -225,24 +216,14 @@ server only from pods running on the same node.
 		// Create main handler.
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
-			case r.ProtoMajor == 2 && strings.Contains(r.Header.Get("Content-Type"), "application/grpc"):
-				grpcServer.ServeHTTP(w, r)
-			case r.URL.Path == "/metrics":
-				metricsHandler.ServeHTTP(w, r)
 			case r.URL.Path == "/healthz", r.URL.Path == "/readyz":
 				w.WriteHeader(http.StatusOK)
+			case r.URL.Path == "/metrics":
+				metricsHandler.ServeHTTP(w, r)
+			case r.ProtoMajor == 2 && strings.Contains(r.Header.Get("Content-Type"), "application/grpc"):
+				serviceHandler.ServeHTTP(w, r)
 			default:
-				statusRecorder := &gatewayStatusRecorder{ResponseWriter: w}
-				w = statusRecorder
-
-				start := time.Now()
-				gwMux.ServeHTTP(w, r)
-				latency := time.Since(start)
-
-				status := fmt.Sprint(statusRecorder.getStatus())
-				gatewayLatencySecs.
-					WithLabelValues(r.Method, r.URL.Path, status).
-					Observe(latency.Seconds())
+				gatewayHandler.ServeHTTP(w, r)
 			}
 		})
 
@@ -254,12 +235,12 @@ server only from pods running on the same node.
 		}
 		localServer := &http.Server{
 			Addr:     localAddr,
-			Handler:  h2c.NewHandler(grpcServer, &http2.Server{}),
+			Handler:  h2c.NewHandler(serviceHandler, &http2.Server{}),
 			ErrorLog: httpLogger,
 		}
 		logger.
 			WithField("rootFlags", rootCmdFlags).
-			WithField("serverFlags", serverCmdFlagsToMap()).
+			WithField("serverFlags", serverCmdFlagsForLogger()).
 			Info("server started")
 		go func() {
 			if err := localServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -330,10 +311,6 @@ func newServerKubeClient(ctx context.Context) (client.Client, error) {
 	})
 }
 
-// =========================
-// observability interceptor
-// =========================
-
 func newServerObservabilityInterceptor(latencySecs *prometheus.SummaryVec,
 	logger logrus.FieldLogger) grpc.UnaryServerInterceptor {
 
@@ -343,7 +320,14 @@ func newServerObservabilityInterceptor(latencySecs *prometheus.SummaryVec,
 		start := time.Now()
 
 		// Inject logger into context.
-		ctx = intoContext(ctx, logger.WithField("method", info.FullMethod))
+		v := metadata.ValueFromIncomingContext(ctx, metadataKeyRemoteAddr)
+		if len(v) == 0 {
+			p, _ := peer.FromContext(ctx)
+			v = []string{p.Addr.String()}
+		}
+		ctx = intoContext(ctx, logger.
+			WithField("remoteAddr", v[0]).
+			WithField("method", info.FullMethod))
 		logger := fromContext(ctx)
 
 		// Call handler.
@@ -410,184 +394,35 @@ func grpcStatusToLogger(statusText string, statusObject *status.Status,
 	return logger.WithField("status", s)
 }
 
-// ===================
-// options interceptor
-// ===================
-
-const (
-	metadataKeyServiceAccountToken = "service-account-token"
-	httpHeaderServiceAccountToken  = "X-Service-Account-Token"
-)
-
-func getGatewayMetadata(ctx context.Context, req *http.Request) metadata.MD {
-	token := req.Header.Get(httpHeaderServiceAccountToken)
-	if token == "" {
-		return nil
+func gatewayHeaderMatcher(key string) (string, bool) {
+	if m, ok := runtime.DefaultHeaderMatcher(key); ok {
+		return m, true
 	}
-	return metadata.MD{metadataKeyServiceAccountToken: []string{token}}
+	if key == httpHeaderServiceAccountToken {
+		return metadataKeyServiceAccountToken, true
+	}
+	return "", false
 }
 
-func gatewayInterceptor(ctx context.Context, method string, req, reply any,
-	cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-	if strings.HasPrefix(method, "/bifrost.") {
-		return invoker(ctx, method, req, reply, cc, opts...)
-	}
-	md, ok := metadata.FromOutgoingContext(ctx)
-	if !ok {
-		return status.Error(codes.Unauthenticated, "metadata is missing")
-	}
-	values := md.Get(metadataKeyServiceAccountToken)
-	if len(values) != 1 {
-		return status.Errorf(codes.Unauthenticated,
-			"http header '%s' is missing", httpHeaderServiceAccountToken)
-	}
-	return invoker(ctx, method, req, reply, cc, opts...)
+func gatewayMetadata(ctx context.Context, r *http.Request) metadata.MD {
+	return metadata.Pairs(metadataKeyRemoteAddr, r.RemoteAddr)
 }
 
-func extractServiceAccountRef(ctx context.Context, c client.Client) (*client.ObjectKey, error) {
-	// Extract service account token from metadata.
-	values := metadata.ValueFromIncomingContext(ctx, metadataKeyServiceAccountToken)
-	if len(values) != 1 {
-		return nil, status.Errorf(codes.Unauthenticated,
-			"key '%s' is missing in grpc metadata", metadataKeyServiceAccountToken)
-	}
-	token := values[0]
+func newGatewayObservabilityMiddleware(latencySecs *prometheus.SummaryVec, handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		statusRecorder := &gatewayStatusRecorder{ResponseWriter: w}
+		w = statusRecorder
 
-	// Validate service account token.
-	tokenReview := &authnv1.TokenReview{
-		Spec: authnv1.TokenReviewSpec{
-			Token: token,
-		},
-	}
-	if err := c.Create(ctx, tokenReview); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to validate token: %v", err)
-	}
-	if !tokenReview.Status.Authenticated {
-		return nil, status.Error(codes.Unauthenticated, "token is not authenticated")
-	}
-	user := tokenReview.Status.User.Username
-	if !strings.HasPrefix(user, "system:serviceaccount:") {
-		return nil, status.Errorf(codes.PermissionDenied, "user is not a service account: %s", user)
-	}
-	s := strings.Split(user, ":")
-	if len(s) != 4 {
-		return nil, status.Errorf(codes.PermissionDenied, "invalid service account: %s", user)
-	}
-	return &client.ObjectKey{
-		Namespace: s[2],
-		Name:      s[3],
-	}, nil
+		start := time.Now()
+		handler.ServeHTTP(w, r)
+		latency := time.Since(start)
+
+		status := fmt.Sprint(statusRecorder.getStatus())
+		latencySecs.
+			WithLabelValues(r.Method, r.URL.Path, status).
+			Observe(latency.Seconds())
+	})
 }
-
-type optionsContextKey struct{}
-
-func optionsFromContext(ctx context.Context) []bifröst.Option {
-	opts, _ := ctx.Value(optionsContextKey{}).([]bifröst.Option)
-	return opts
-}
-
-func newServerOptionsInterceptor(c client.Client, cache bifröst.Cache,
-	rootOpts []bifröst.Option) grpc.UnaryServerInterceptor {
-
-	// Build cache metrics.
-	const tokenCacheMetricsSubsystem = "token_cache"
-	var tokenCacheLatencies *prometheus.SummaryVec
-	var tokenCacheEvents *prometheus.CounterVec
-	var tokenCacheDuplicates *prometheus.CounterVec
-	var tokenCacheEvictions prometheus.Counter
-	var tokenCacheItems prometheus.Gauge
-	if cache != nil {
-		tokenCacheLatencies = promauto.NewSummaryVec(prometheus.SummaryOpts{
-			Help:      "Token cache request latency in seconds per service account, gRPC method and status.",
-			Namespace: metricsNamespace,
-			Subsystem: tokenCacheMetricsSubsystem,
-			Name:      "request_latency_seconds",
-		}, []string{"name", "namespace", "method", "status"})
-		tokenCacheEvents = promauto.NewCounterVec(prometheus.CounterOpts{
-			Help:      "Token cache event count per service account and gRPC method.",
-			Namespace: metricsNamespace,
-			Subsystem: tokenCacheMetricsSubsystem,
-			Name:      "events_total",
-		}, []string{"name", "namespace", "method", "event"})
-		tokenCacheDuplicates = promauto.NewCounterVec(prometheus.CounterOpts{
-			Help:      "Number of token requests that overlapped with in-flight requests.",
-			Namespace: metricsNamespace,
-			Subsystem: tokenCacheMetricsSubsystem,
-			Name:      "duplicates_total",
-		}, []string{"name", "namespace", "method"})
-		tokenCacheEvictions = promauto.NewCounter(prometheus.CounterOpts{
-			Help:      "Number of token cache evictions.",
-			Namespace: metricsNamespace,
-			Subsystem: tokenCacheMetricsSubsystem,
-			Name:      "evictions_total",
-		})
-		tokenCacheItems = promauto.NewGauge(prometheus.GaugeOpts{
-			Help:      "Number of items in the token cache.",
-			Namespace: metricsNamespace,
-			Subsystem: tokenCacheMetricsSubsystem,
-			Name:      "items",
-		})
-	}
-
-	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo,
-		handler grpc.UnaryHandler) (resp any, err error) {
-
-		if _, ok := info.Server.(bifrostService); ok {
-			return handler(ctx, req)
-		}
-
-		serviceAccountRef, err := extractServiceAccountRef(ctx, c)
-		if err != nil {
-			return nil, err
-		}
-
-		logger := fromContext(ctx)
-		*logger = (*logger).WithField("serviceAccount", logrus.Fields{
-			"name":      serviceAccountRef.Name,
-			"namespace": serviceAccountRef.Namespace,
-		})
-		opts := append(rootOpts, bifröst.WithServiceAccount(*serviceAccountRef, c))
-
-		defer func() {
-			if err != nil {
-				return
-			}
-			l := *logger
-			if cache == nil {
-				l.Info("token issued")
-			}
-			l.Debug("token retrieved")
-		}()
-
-		if cache != nil {
-			observer := &tokenCacheObserver{
-				logger:            logger,
-				latencies:         tokenCacheLatencies,
-				events:            tokenCacheEvents,
-				duplicates:        tokenCacheDuplicates,
-				evictions:         tokenCacheEvictions,
-				items:             tokenCacheItems,
-				serviceAccountRef: serviceAccountRef,
-				method:            info.FullMethod,
-			}
-			opts = append(opts, bifröst.WithCache(cache.WithObserver(observer)))
-		}
-
-		// The only identity provider we support is GCP. If the requested
-		// acces token is for GCP, then using GCP as the identity provider
-		// is not necessary/does not make sense.
-		if _, ok := info.Server.(gcpService); ok {
-			opts = append(opts, bifröst.WithIdentityProvider(nil))
-		}
-
-		ctx = context.WithValue(ctx, optionsContextKey{}, opts)
-		return handler(ctx, req)
-	}
-}
-
-// ============================
-// gRPC gateway status recorder
-// ============================
 
 type gatewayStatusRecorder struct {
 	http.ResponseWriter
@@ -605,57 +440,4 @@ func (s *gatewayStatusRecorder) getStatus() int {
 		return http.StatusOK
 	}
 	return s.status
-}
-
-// ====================
-// token cache observer
-// ====================
-
-type tokenCacheObserver struct {
-	logger            *logrus.FieldLogger
-	latencies         *prometheus.SummaryVec
-	events            *prometheus.CounterVec
-	duplicates        *prometheus.CounterVec
-	evictions         prometheus.Counter
-	items             prometheus.Gauge
-	serviceAccountRef *client.ObjectKey
-	method            string
-}
-
-func (t *tokenCacheObserver) OnCacheHit() {
-	t.events.WithLabelValues(t.serviceAccountRef.Name,
-		t.serviceAccountRef.Namespace, t.method, "hit").Inc()
-}
-
-func (t *tokenCacheObserver) OnCacheMiss() {
-	t.events.WithLabelValues(t.serviceAccountRef.Name,
-		t.serviceAccountRef.Namespace, t.method, "miss").Inc()
-}
-
-func (t *tokenCacheObserver) OnTokenIssued(latency time.Duration) {
-	(*t.logger).Info("token issued")
-	t.items.Inc()
-	t.latencies.WithLabelValues(t.serviceAccountRef.Name,
-		t.serviceAccountRef.Namespace, t.method, "success").
-		Observe(latency.Seconds())
-}
-
-func (t *tokenCacheObserver) OnTokenEvicted() {
-	t.items.Dec()
-	t.evictions.Inc()
-}
-
-func (t *tokenCacheObserver) OnTokenExpired() {
-	t.items.Dec()
-}
-
-func (t *tokenCacheObserver) OnFailedRequest(latency time.Duration) {
-	t.latencies.WithLabelValues(t.serviceAccountRef.Name,
-		t.serviceAccountRef.Namespace, t.method, "failure").
-		Observe(latency.Seconds())
-}
-
-func (t *tokenCacheObserver) OnDuplicateRequest() {
-	t.duplicates.WithLabelValues(t.serviceAccountRef.Name,
-		t.serviceAccountRef.Namespace, t.method).Inc()
 }

@@ -34,14 +34,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
-	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
-	gcppb "github.com/kubernetes-bifrost/bifrost/grpc/gcp/go"
+	bifröstpb "github.com/kubernetes-bifrost/bifrost/grpc/go"
 	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 )
 
@@ -65,7 +64,7 @@ var getGCPTokenCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx := rootCmdFlags.ctx
 
-		var token bifröst.Token
+		var token any
 		var err error
 		if getTokenCmdFlags.grpcEndpoint != "" {
 			token, err = callGCPService(ctx)
@@ -153,112 +152,79 @@ func issueGCPToken(ctx context.Context) (bifröst.Token, error) {
 	return token, nil
 }
 
-func callGCPService(ctx context.Context) (bifröst.Token, error) {
-	client := gcppb.NewBifrostClient(getTokenCmdFlags.grpcClient)
-
-	tokenReq := &gcppb.GetTokenRequest{}
-
-	if aud := getGCPTokenCmdFlags.workloadIdentityProvider; aud != "" {
-		tokenReq.WorkloadIdentityProvider = aud
-	}
-
-	if email := getGCPTokenCmdFlags.serviceAccountEmail; email != "" {
-		tokenReq.ServiceAccountEmail = email
-	}
-
-	if registry := getTokenCmdFlags.containerRegistry; registry != "" {
-		resp, err := client.GetContainerRegistryLogin(ctx, &gcppb.GetContainerRegistryLoginRequest{
-			TokenRequest: tokenReq,
-			Registry:     registry,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to get GCP container registry login: %w", err)
-		}
-		return &bifröst.ContainerRegistryLogin{
-			Username:  resp.Username,
-			Password:  resp.Password,
-			ExpiresAt: resp.ExpiresAt.AsTime(),
-		}, nil
-	}
-
-	resp, err := client.GetToken(ctx, tokenReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get GCP access token: %w", err)
-	}
-	return &gcp.Token{Token: oauth2.Token{
-		AccessToken:  resp.AccessToken,
-		TokenType:    resp.TokenType,
-		RefreshToken: resp.RefreshToken,
-		Expiry:       resp.Expiry.AsTime(),
-		ExpiresIn:    resp.ExpiresIn,
-	}}, nil
-}
-
 // ============
 // gRPC service
 // ============
 
-type gcpService struct {
-	gcppb.UnimplementedBifrostServer
-}
+func callGCPService(ctx context.Context) (any, error) {
+	client := bifröstpb.NewBifrostClient(getTokenCmdFlags.grpcClient)
 
-func (g gcpService) register(server *grpc.Server) {
-	gcppb.RegisterBifrostServer(server, g)
-}
+	var params bifröstpb.GCPParams
 
-func (gcpService) registerGateway(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
-	return gcppb.RegisterBifrostHandlerFromEndpoint(ctx, mux, endpoint, opts)
-}
+	if aud := getGCPTokenCmdFlags.workloadIdentityProvider; aud != "" {
+		params.WorkloadIdentityProvider = aud
+	}
 
-func (gcpService) GetToken(ctx context.Context, req *gcppb.GetTokenRequest) (*gcppb.GetTokenResponse, error) {
-	opts := getGCPOptions(ctx, req)
+	if email := getGCPTokenCmdFlags.serviceAccountEmail; email != "" {
+		params.ServiceAccountEmail = email
+	}
 
-	token, err := bifröst.GetToken(ctx, gcp.Provider{}, opts...)
+	resp, err := client.GetToken(ctx, &bifröstpb.GetTokenRequest{
+		ContainerRegistry: getTokenCmdFlags.containerRegistry,
+		ProviderParams: &bifröstpb.GetTokenRequest_GCP{
+			GCP: &params,
+		},
+	})
+
 	if err != nil {
 		return nil, err
 	}
-	gcpToken := token.(*gcp.Token)
 
-	return &gcppb.GetTokenResponse{
-		AccessToken:  gcpToken.AccessToken,
-		TokenType:    gcpToken.TokenType,
-		RefreshToken: gcpToken.RefreshToken,
-		Expiry:       timestamppb.New(gcpToken.Expiry),
-		ExpiresIn:    gcpToken.ExpiresIn,
-	}, nil
-}
-
-func (gcpService) GetContainerRegistryLogin(ctx context.Context,
-	req *gcppb.GetContainerRegistryLoginRequest) (*gcppb.ContainerRegistryLogin, error) {
-
-	opts := getGCPOptions(ctx, req.GetTokenRequest())
-	opts = append(opts, bifröst.WithContainerRegistry(req.GetRegistry()))
-
-	token, err := bifröst.GetToken(ctx, gcp.Provider{}, opts...)
-	if err != nil {
-		return nil, err
+	token := resp.GetGCP()
+	if token == nil {
+		return resp.GetToken(), nil
 	}
-	login := token.(*bifröst.ContainerRegistryLogin)
 
-	return &gcppb.ContainerRegistryLogin{
-		Username:  login.Username,
-		Password:  login.Password,
-		ExpiresAt: timestamppb.New(login.ExpiresAt),
-	}, nil
+	return &gcp.Token{Token: oauth2.Token{
+		AccessToken:  token.AccessToken,
+		TokenType:    token.TokenType,
+		RefreshToken: token.RefreshToken,
+		Expiry:       token.Expiry.AsTime(),
+		ExpiresIn:    token.ExpiresIn,
+	}}, nil
 }
 
-func getGCPOptions(ctx context.Context, req *gcppb.GetTokenRequest) []bifröst.Option {
-	opts := optionsFromContext(ctx)
+func getGCPOptionsAndProvider(params *bifröstpb.GCPParams, opts []bifröst.Option,
+	providerLoggerData logrus.Fields) ([]bifröst.Option, bifröst.Provider) {
 
-	if wip := req.GetWorkloadIdentityProvider(); wip != "" {
+	// The only identity provider we support is GCP. If the requested
+	// access token is for GCP, then using GCP as the identity provider
+	// is not necessary/does not make sense.
+	opts = append(opts, bifröst.WithIdentityProvider(nil))
+
+	if wip := params.GetWorkloadIdentityProvider(); wip != "" {
 		opts = append(opts, bifröst.WithProviderOptions(gcp.WithWorkloadIdentityProvider(wip)))
+		providerLoggerData["workloadIdentityProvider"] = wip
 	}
 
-	if email := req.GetServiceAccountEmail(); email != "" {
+	if email := params.GetServiceAccountEmail(); email != "" {
 		opts = append(opts, bifröst.WithProviderOptions(gcp.WithServiceAccountEmail(email)))
+		providerLoggerData["serviceAccountEmail"] = email
 	}
 
-	return opts
+	return opts, gcp.Provider{}
+}
+
+func getGCPResponseFromToken(t *gcp.Token) *bifröstpb.GetTokenResponse_GCP {
+	return &bifröstpb.GetTokenResponse_GCP{
+		GCP: &bifröstpb.GCPToken{
+			AccessToken:  t.AccessToken,
+			TokenType:    t.TokenType,
+			RefreshToken: t.RefreshToken,
+			Expiry:       timestamppb.New(t.Expiry),
+			ExpiresIn:    t.ExpiresIn,
+		},
+	}
 }
 
 // ===================

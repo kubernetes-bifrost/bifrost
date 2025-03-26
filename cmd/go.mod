@@ -4,10 +4,7 @@ go 1.24.1
 
 replace (
 	github.com/kubernetes-bifrost/bifrost => ../
-	github.com/kubernetes-bifrost/bifrost/grpc/aws/go => ../grpc/aws/go
-	github.com/kubernetes-bifrost/bifrost/grpc/azure/go => ../grpc/azure/go
-	github.com/kubernetes-bifrost/bifrost/grpc/bifrost/go => ../grpc/bifrost/go
-	github.com/kubernetes-bifrost/bifrost/grpc/gcp/go => ../grpc/gcp/go
+	github.com/kubernetes-bifrost/bifrost/grpc/go => ../grpc/go
 	github.com/kubernetes-bifrost/bifrost/providers/aws => ../providers/aws
 	github.com/kubernetes-bifrost/bifrost/providers/azure => ../providers/azure
 	github.com/kubernetes-bifrost/bifrost/providers/gcp => ../providers/gcp
@@ -19,10 +16,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3
 	github.com/kubernetes-bifrost/bifrost v0.17.0
-	github.com/kubernetes-bifrost/bifrost/grpc/aws/go v0.17.0
-	github.com/kubernetes-bifrost/bifrost/grpc/azure/go v0.17.0
-	github.com/kubernetes-bifrost/bifrost/grpc/bifrost/go v0.17.0
-	github.com/kubernetes-bifrost/bifrost/grpc/gcp/go v0.17.0
+	github.com/kubernetes-bifrost/bifrost/grpc/go v0.17.0
 	github.com/kubernetes-bifrost/bifrost/providers/gcp v0.17.0
 	github.com/prometheus/client_golang v1.21.1
 	github.com/sirupsen/logrus v1.9.3
@@ -91,7 +85,7 @@ require (
 	golang.org/x/time v0.11.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/api v0.227.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250313205543-e70fdf4c4cb4 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250324211829-b45e905df463 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250313205543-e70fdf4c4cb4 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect

@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
+	bifröstpb "github.com/kubernetes-bifrost/bifrost/grpc/go"
 	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 )
 
@@ -124,14 +125,14 @@ var getTokenCmd = &cobra.Command{
 		case outputFormatRaw:
 			if getTokenCmdFlags.containerRegistry != "" {
 				getTokenCmdFlags.outputFormatter = func(t any) error {
-					fmt.Println(t.(*bifröst.ContainerRegistryLogin).Password)
+					fmt.Println(getContainerRegistryLogin(t).Password)
 					return nil
 				}
 			}
 		case outputFormatReflect, "":
 			if getTokenCmdFlags.containerRegistry != "" {
 				getTokenCmdFlags.outputFormatter = func(t any) error {
-					c := t.(*bifröst.ContainerRegistryLogin)
+					c := getContainerRegistryLogin(t)
 					fmt.Printf(`Username:   %[1]s
 Password:   %[2]s
 Expires At: %[3]s (%[4]s)
@@ -270,4 +271,19 @@ Expires At: %[3]s (%[4]s)
 			}
 		}
 	},
+}
+
+func getContainerRegistryLogin(t any) *bifröst.ContainerRegistryLogin {
+	switch t := t.(type) {
+	case *bifröst.ContainerRegistryLogin:
+		return t
+	case *bifröstpb.GetTokenResponse_RegistryLogin:
+		return &bifröst.ContainerRegistryLogin{
+			Username:  t.RegistryLogin.Username,
+			Password:  t.RegistryLogin.Password,
+			ExpiresAt: t.RegistryLogin.ExpiresAt.AsTime(),
+		}
+	default:
+		return nil
+	}
 }

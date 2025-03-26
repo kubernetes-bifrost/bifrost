@@ -28,7 +28,7 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 
-	bifröstpb "github.com/kubernetes-bifrost/bifrost/grpc/bifrost/go"
+	bifröstpb "github.com/kubernetes-bifrost/bifrost/grpc/go"
 )
 
 var getVersionCmdFlags struct {

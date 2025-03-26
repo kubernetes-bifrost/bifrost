@@ -113,17 +113,12 @@ git pull
 git fetch --prune --all --force --tags
 git branch -d release
 
-# Tag main gRPC service and providers
-git tag -s -m grpc/bifrost/go/$new_version grpc/bifrost/go/$new_version
+# Tag gRPC stubs and provider modules.
+git tag -s -m grpc/go/$new_version grpc/go/$new_version
 for path in providers/*; do
-    provider=$(basename $path)
-    tags=(
-        "providers/$provider/$new_version"
-        "grpc/$provider/go/$new_version"
-    )
-    for tag in "${tags[@]}"; do
-        git tag -s -m $tag $tag
-    done
+    provider="$(basename $path)"
+    tag="providers/$provider/$new_version"
+    git tag -s -m $tag $tag
 done
 git push origin --tags
 
