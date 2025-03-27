@@ -44,8 +44,8 @@ func init() {
 }
 
 var getServiceAccountTokenCmd = &cobra.Command{
-	Use:   "sa-token",
-	Short: "Create a token for a Kubernetes service account",
+	Use:   "print-sa-token",
+	Short: "Print the Kubernetes service account token mounted on the pod or create and print one for another service account",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx := rootCmdFlags.ctx
 		var token string

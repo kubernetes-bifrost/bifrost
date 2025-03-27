@@ -68,6 +68,7 @@ var serverCmdFlags struct {
 	localPort                          int
 	tlsCertFile                        string
 	tlsKeyFile                         string
+	disableTLS                         bool
 	disableProxy                       bool
 	objectCacheSyncPeriod              time.Duration
 	tokenCacheMaxSize                  int
@@ -81,6 +82,7 @@ func serverCmdFlagsForLogger() logrus.Fields {
 		"localPort":                          serverCmdFlags.localPort,
 		"tlsCertFile":                        serverCmdFlags.tlsCertFile,
 		"tlsKeyFile":                         serverCmdFlags.tlsKeyFile,
+		"disableTLS":                         serverCmdFlags.disableTLS,
 		"disableProxy":                       serverCmdFlags.disableProxy,
 		"objectCacheSyncPeriod":              serverCmdFlags.objectCacheSyncPeriod.String(),
 		"tokenCacheMaxSize":                  serverCmdFlags.tokenCacheMaxSize,
@@ -100,6 +102,8 @@ func init() {
 		"Path to the TLS certificate file")
 	serverCmd.Flags().StringVar(&serverCmdFlags.tlsKeyFile, "tls-key-file", "/etc/bifrost/tls/tls.key",
 		"Path to the TLS key file")
+	serverCmd.Flags().BoolVar(&serverCmdFlags.disableTLS, "disable-tls", false,
+		"Disable TLS")
 	serverCmd.Flags().BoolVar(&serverCmdFlags.disableProxy, "disable-proxy", false,
 		"Disable the use of HTTP/S proxies for talking to the Security Token Service of cloud providers")
 	serverCmd.Flags().DurationVar(&serverCmdFlags.objectCacheSyncPeriod, "object-cache-sync-period", 10*time.Minute,
@@ -140,7 +144,7 @@ server only from pods running on the same node.
 		promLogger := newPromLogger(logger)
 
 		// Validate TLS settings.
-		if !rootCmdFlags.DisableTLS {
+		if !serverCmdFlags.disableTLS {
 			if _, err := tls.LoadX509KeyPair(serverCmdFlags.tlsCertFile, serverCmdFlags.tlsKeyFile); err != nil {
 				return fmt.Errorf("failed to load TLS key pair: %w", err)
 			}
@@ -265,7 +269,7 @@ server only from pods running on the same node.
 		}()
 		go func() {
 			var err error
-			if rootCmdFlags.DisableTLS {
+			if serverCmdFlags.disableTLS {
 				err = server.ListenAndServe()
 			} else {
 				err = server.ListenAndServeTLS(serverCmdFlags.tlsCertFile, serverCmdFlags.tlsKeyFile)
