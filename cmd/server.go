@@ -66,6 +66,8 @@ const (
 var serverCmdFlags struct {
 	port                               int
 	localPort                          int
+	tlsCertFile                        string
+	tlsKeyFile                         string
 	disableProxy                       bool
 	objectCacheSyncPeriod              time.Duration
 	tokenCacheMaxSize                  int
@@ -77,6 +79,8 @@ func serverCmdFlagsForLogger() logrus.Fields {
 	return logrus.Fields{
 		"port":                               serverCmdFlags.port,
 		"localPort":                          serverCmdFlags.localPort,
+		"tlsCertFile":                        serverCmdFlags.tlsCertFile,
+		"tlsKeyFile":                         serverCmdFlags.tlsKeyFile,
 		"disableProxy":                       serverCmdFlags.disableProxy,
 		"objectCacheSyncPeriod":              serverCmdFlags.objectCacheSyncPeriod.String(),
 		"tokenCacheMaxSize":                  serverCmdFlags.tokenCacheMaxSize,
@@ -92,6 +96,10 @@ func init() {
 		"Port to listen on")
 	serverCmd.Flags().IntVar(&serverCmdFlags.localPort, "local-port", 8081,
 		"Port to listen on over plain HTTP for local traffic from gRPC gateway")
+	serverCmd.Flags().StringVar(&serverCmdFlags.tlsCertFile, "tls-cert-file", "/etc/bifrost/tls/tls.crt",
+		"Path to the TLS certificate file")
+	serverCmd.Flags().StringVar(&serverCmdFlags.tlsKeyFile, "tls-key-file", "/etc/bifrost/tls/tls.key",
+		"Path to the TLS key file")
 	serverCmd.Flags().BoolVar(&serverCmdFlags.disableProxy, "disable-proxy", false,
 		"Disable the use of HTTP/S proxies for talking to the Security Token Service of cloud providers")
 	serverCmd.Flags().DurationVar(&serverCmdFlags.objectCacheSyncPeriod, "object-cache-sync-period", 10*time.Minute,
@@ -133,7 +141,7 @@ server only from pods running on the same node.
 
 		// Validate TLS settings.
 		if !rootCmdFlags.DisableTLS {
-			if _, err := tls.LoadX509KeyPair(rootCmdFlags.TLSCertFile, rootCmdFlags.TLSKeyFile); err != nil {
+			if _, err := tls.LoadX509KeyPair(serverCmdFlags.tlsCertFile, serverCmdFlags.tlsKeyFile); err != nil {
 				return fmt.Errorf("failed to load TLS key pair: %w", err)
 			}
 		}
@@ -260,7 +268,7 @@ server only from pods running on the same node.
 			if rootCmdFlags.DisableTLS {
 				err = server.ListenAndServe()
 			} else {
-				err = server.ListenAndServeTLS(rootCmdFlags.TLSCertFile, rootCmdFlags.TLSKeyFile)
+				err = server.ListenAndServeTLS(serverCmdFlags.tlsCertFile, serverCmdFlags.tlsKeyFile)
 			}
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				logger.WithError(err).Fatal("server failed")
