@@ -29,6 +29,7 @@
 package bifröstpb
 
 import (
+	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -407,7 +408,7 @@ func (x *GetTokenResponse) GetRegistryLogin() *ContainerRegistryLogin {
 	return nil
 }
 
-func (x *GetTokenResponse) GetAws() *AWSAssumeRole {
+func (x *GetTokenResponse) GetAws() *AWSToken {
 	if x != nil {
 		if x, ok := x.Token.(*GetTokenResponse_Aws); ok {
 			return x.Aws
@@ -443,7 +444,7 @@ type GetTokenResponse_RegistryLogin struct {
 }
 
 type GetTokenResponse_Aws struct {
-	Aws *AWSAssumeRole `protobuf:"bytes,100,opt,name=aws,proto3,oneof"`
+	Aws *AWSToken `protobuf:"bytes,100,opt,name=aws,proto3,oneof"`
 }
 
 type GetTokenResponse_Azure struct {
@@ -514,7 +515,7 @@ func (x *AWSParams) GetRoleSessionName() string {
 	return ""
 }
 
-type AWSAssumeRole struct {
+type AWSToken struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	AccessKeyId     string                 `protobuf:"bytes,1,opt,name=access_key_id,json=accessKeyId,proto3" json:"access_key_id,omitempty"`
 	SecretAccessKey string                 `protobuf:"bytes,2,opt,name=secret_access_key,json=secretAccessKey,proto3" json:"secret_access_key,omitempty"`
@@ -524,20 +525,20 @@ type AWSAssumeRole struct {
 	sizeCache       protoimpl.SizeCache
 }
 
-func (x *AWSAssumeRole) Reset() {
-	*x = AWSAssumeRole{}
+func (x *AWSToken) Reset() {
+	*x = AWSToken{}
 	mi := &file_bifrost_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AWSAssumeRole) String() string {
+func (x *AWSToken) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AWSAssumeRole) ProtoMessage() {}
+func (*AWSToken) ProtoMessage() {}
 
-func (x *AWSAssumeRole) ProtoReflect() protoreflect.Message {
+func (x *AWSToken) ProtoReflect() protoreflect.Message {
 	mi := &file_bifrost_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -549,33 +550,33 @@ func (x *AWSAssumeRole) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AWSAssumeRole.ProtoReflect.Descriptor instead.
-func (*AWSAssumeRole) Descriptor() ([]byte, []int) {
+// Deprecated: Use AWSToken.ProtoReflect.Descriptor instead.
+func (*AWSToken) Descriptor() ([]byte, []int) {
 	return file_bifrost_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *AWSAssumeRole) GetAccessKeyId() string {
+func (x *AWSToken) GetAccessKeyId() string {
 	if x != nil {
 		return x.AccessKeyId
 	}
 	return ""
 }
 
-func (x *AWSAssumeRole) GetSecretAccessKey() string {
+func (x *AWSToken) GetSecretAccessKey() string {
 	if x != nil {
 		return x.SecretAccessKey
 	}
 	return ""
 }
 
-func (x *AWSAssumeRole) GetSessionToken() string {
+func (x *AWSToken) GetSessionToken() string {
 	if x != nil {
 		return x.SessionToken
 	}
 	return ""
 }
 
-func (x *AWSAssumeRole) GetExpiration() *timestamppb.Timestamp {
+func (x *AWSToken) GetExpiration() *timestamppb.Timestamp {
 	if x != nil {
 		return x.Expiration
 	}
@@ -827,7 +828,7 @@ var File_bifrost_proto protoreflect.FileDescriptor
 const file_bifrost_proto_rawDesc = "" +
 	"\n" +
 	"\rbifrost.proto\x12\n" +
-	"bifrost.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/api/annotations.proto\"\x8b\x01\n" +
+	"bifrost.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\x8b\x01\n" +
 	"\x16ContainerRegistryLogin\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x129\n" +
@@ -835,24 +836,24 @@ const file_bifrost_proto_rawDesc = "" +
 	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x13\n" +
 	"\x11GetVersionRequest\".\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
-	"\aversion\x18\x01 \x01(\tR\aversion\"\x8c\x02\n" +
-	"\x0fGetTokenRequest\x120\n" +
-	"\bprovider\x18\x01 \x01(\x0e2\x14.bifrost.v1.ProviderR\bprovider\x12-\n" +
+	"\aversion\x18\x01 \x01(\tR\aversion\"\x91\x02\n" +
+	"\x0fGetTokenRequest\x125\n" +
+	"\bprovider\x18\x01 \x01(\x0e2\x14.bifrost.v1.ProviderB\x03\xe0A\x02R\bprovider\x12-\n" +
 	"\x12container_registry\x18\x02 \x01(\tR\x11containerRegistry\x12)\n" +
 	"\x03aws\x18d \x01(\v2\x15.bifrost.v1.AWSParamsH\x00R\x03aws\x12/\n" +
 	"\x05azure\x18e \x01(\v2\x17.bifrost.v1.AzureParamsH\x00R\x05azure\x12)\n" +
 	"\x03gcp\x18f \x01(\v2\x15.bifrost.v1.GCPParamsH\x00R\x03gcpB\x11\n" +
-	"\x0fprovider_params\"\xf1\x01\n" +
+	"\x0fprovider_params\"\xec\x01\n" +
 	"\x10GetTokenResponse\x12K\n" +
-	"\x0eregistry_login\x18\x01 \x01(\v2\".bifrost.v1.ContainerRegistryLoginH\x00R\rregistryLogin\x12-\n" +
-	"\x03aws\x18d \x01(\v2\x19.bifrost.v1.AWSAssumeRoleH\x00R\x03aws\x12.\n" +
+	"\x0eregistry_login\x18\x01 \x01(\v2\".bifrost.v1.ContainerRegistryLoginH\x00R\rregistryLogin\x12(\n" +
+	"\x03aws\x18d \x01(\v2\x14.bifrost.v1.AWSTokenH\x00R\x03aws\x12.\n" +
 	"\x05azure\x18e \x01(\v2\x16.bifrost.v1.AzureTokenH\x00R\x05azure\x12(\n" +
 	"\x03gcp\x18f \x01(\v2\x14.bifrost.v1.GCPTokenH\x00R\x03gcpB\a\n" +
 	"\x05token\"R\n" +
 	"\tAWSParams\x12\x19\n" +
 	"\brole_arn\x18\x01 \x01(\tR\aroleArn\x12*\n" +
-	"\x11role_session_name\x18\x02 \x01(\tR\x0froleSessionName\"\xc0\x01\n" +
-	"\rAWSAssumeRole\x12\"\n" +
+	"\x11role_session_name\x18\x02 \x01(\tR\x0froleSessionName\"\xbb\x01\n" +
+	"\bAWSToken\x12\"\n" +
 	"\raccess_key_id\x18\x01 \x01(\tR\vaccessKeyId\x12*\n" +
 	"\x11secret_access_key\x18\x02 \x01(\tR\x0fsecretAccessKey\x12#\n" +
 	"\rsession_token\x18\x03 \x01(\tR\fsessionToken\x12:\n" +
@@ -882,11 +883,13 @@ const file_bifrost_proto_rawDesc = "" +
 	"\bProvider\x12\a\n" +
 	"\x03aws\x10\x00\x12\t\n" +
 	"\x05azure\x10\x01\x12\a\n" +
-	"\x03gcp\x10\x022\xc5\x01\n" +
+	"\x03gcp\x10\x022\xf2\x02\n" +
 	"\aBifrost\x12`\n" +
 	"\n" +
-	"GetVersion\x12\x1d.bifrost.v1.GetVersionRequest\x1a\x1e.bifrost.v1.GetVersionResponse\"\x13\x82\xd3\xe4\x93\x02\r\x12\v/v1/version\x12X\n" +
-	"\bGetToken\x12\x1b.bifrost.v1.GetTokenRequest\x1a\x1c.bifrost.v1.GetTokenResponse\"\x11\x82\xd3\xe4\x93\x02\v\x12\t/v1/tokenB:Z8github.com/kubernetes-bifrost/bifrost/grpc/go;bifröstpbb\x06proto3"
+	"GetVersion\x12\x1d.bifrost.v1.GetVersionRequest\x1a\x1e.bifrost.v1.GetVersionResponse\"\x13\x82\xd3\xe4\x93\x02\r\x12\v/v1/version\x12\x84\x02\n" +
+	"\bGetToken\x12\x1b.bifrost.v1.GetTokenRequest\x1a\x1c.bifrost.v1.GetTokenResponse\"\xbc\x01\x92A\xa7\x01r\xa4\x01\n" +
+	"\xa1\x01\n" +
+	"\x17X-Service-Account-Token\x12\x81\x01A Kubernetes service account token for authentication. This header is converted to the gRPC metadata key 'service-account-token'.\x18\x01(\x01\x82\xd3\xe4\x93\x02\v\x12\t/v1/tokenB:Z8github.com/kubernetes-bifrost/bifrost/grpc/go;bifröstpbb\x06proto3"
 
 var (
 	file_bifrost_proto_rawDescOnce sync.Once
@@ -910,7 +913,7 @@ var file_bifrost_proto_goTypes = []any{
 	(*GetTokenRequest)(nil),        // 4: bifrost.v1.GetTokenRequest
 	(*GetTokenResponse)(nil),       // 5: bifrost.v1.GetTokenResponse
 	(*AWSParams)(nil),              // 6: bifrost.v1.AWSParams
-	(*AWSAssumeRole)(nil),          // 7: bifrost.v1.AWSAssumeRole
+	(*AWSToken)(nil),               // 7: bifrost.v1.AWSToken
 	(*AzureParams)(nil),            // 8: bifrost.v1.AzureParams
 	(*AzureToken)(nil),             // 9: bifrost.v1.AzureToken
 	(*GCPParams)(nil),              // 10: bifrost.v1.GCPParams
@@ -924,10 +927,10 @@ var file_bifrost_proto_depIdxs = []int32{
 	8,  // 3: bifrost.v1.GetTokenRequest.azure:type_name -> bifrost.v1.AzureParams
 	10, // 4: bifrost.v1.GetTokenRequest.gcp:type_name -> bifrost.v1.GCPParams
 	1,  // 5: bifrost.v1.GetTokenResponse.registry_login:type_name -> bifrost.v1.ContainerRegistryLogin
-	7,  // 6: bifrost.v1.GetTokenResponse.aws:type_name -> bifrost.v1.AWSAssumeRole
+	7,  // 6: bifrost.v1.GetTokenResponse.aws:type_name -> bifrost.v1.AWSToken
 	9,  // 7: bifrost.v1.GetTokenResponse.azure:type_name -> bifrost.v1.AzureToken
 	11, // 8: bifrost.v1.GetTokenResponse.gcp:type_name -> bifrost.v1.GCPToken
-	12, // 9: bifrost.v1.AWSAssumeRole.expiration:type_name -> google.protobuf.Timestamp
+	12, // 9: bifrost.v1.AWSToken.expiration:type_name -> google.protobuf.Timestamp
 	12, // 10: bifrost.v1.AzureToken.expires_on:type_name -> google.protobuf.Timestamp
 	12, // 11: bifrost.v1.GCPToken.expiry:type_name -> google.protobuf.Timestamp
 	2,  // 12: bifrost.v1.Bifrost.GetVersion:input_type -> bifrost.v1.GetVersionRequest

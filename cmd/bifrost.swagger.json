@@ -37,7 +37,7 @@
           {
             "name": "provider",
             "in": "query",
-            "required": false,
+            "required": true,
             "type": "string",
             "enum": [
               "aws",
@@ -96,6 +96,13 @@
             "name": "gcp.workloadIdentityProvider",
             "in": "query",
             "required": false,
+            "type": "string"
+          },
+          {
+            "name": "X-Service-Account-Token",
+            "description": "A Kubernetes service account token for authentication. This header is converted to the gRPC metadata key 'service-account-token'.",
+            "in": "header",
+            "required": true,
             "type": "string"
           }
         ],
@@ -156,7 +163,18 @@
         }
       }
     },
-    "v1AWSAssumeRole": {
+    "v1AWSParams": {
+      "type": "object",
+      "properties": {
+        "roleArn": {
+          "type": "string"
+        },
+        "roleSessionName": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AWSToken": {
       "type": "object",
       "properties": {
         "accessKeyId": {
@@ -171,17 +189,6 @@
         "expiration": {
           "type": "string",
           "format": "date-time"
-        }
-      }
-    },
-    "v1AWSParams": {
-      "type": "object",
-      "properties": {
-        "roleArn": {
-          "type": "string"
-        },
-        "roleSessionName": {
-          "type": "string"
         }
       }
     },
@@ -269,7 +276,7 @@
           "$ref": "#/definitions/v1ContainerRegistryLogin"
         },
         "aws": {
-          "$ref": "#/definitions/v1AWSAssumeRole"
+          "$ref": "#/definitions/v1AWSToken"
         },
         "azure": {
           "$ref": "#/definitions/v1AzureToken"

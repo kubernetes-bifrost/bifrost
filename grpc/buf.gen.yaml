@@ -35,4 +35,4 @@ plugins:
   opt:
   - paths=source_relative
 - local: [go, tool, github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2]
-  out: ./openapiv2
+  out: ../cmd/
