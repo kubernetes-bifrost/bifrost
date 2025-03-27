@@ -32,34 +32,26 @@ import (
 )
 
 var getVersionCmdFlags struct {
-	grpcEndpoint string
 }
 
 func init() {
-	rootCmd.AddCommand(getVersionCmd)
-
-	getVersionCmd.Flags().StringVar(&getVersionCmdFlags.grpcEndpoint, "grpc-endpoint", "",
-		"The endpoint of the gRPC server")
+	getCmd.AddCommand(getVersionCmd)
 }
 
 var getVersionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the versions of the Bifröst client and server",
 	RunE: func(*cobra.Command, []string) error {
-		creds, err := getClientTransportCreds()
+		conn, err := grpc.NewClient(getCmdFlags.grpcEndpoint, getCmdFlags.grpcClientCreds)
 		if err != nil {
-			fmt.Println("client:", version)
-			return err
-		}
-		client, err := grpc.NewClient(getVersionCmdFlags.grpcEndpoint, grpc.WithTransportCredentials(creds))
-		if err != nil {
-			fmt.Println("client:", version)
+			fmt.Printf("client: %s\n\n", version)
 			return fmt.Errorf("failed to create gRPC client: %w", err)
 		}
-		bifrostClient := bifröstpb.NewBifrostClient(client)
-		resp, err := bifrostClient.GetVersion(rootCmdFlags.ctx, &bifröstpb.GetVersionRequest{})
+		defer conn.Close()
+		client := bifröstpb.NewBifrostClient(conn)
+		resp, err := client.GetVersion(rootCmdFlags.ctx, &bifröstpb.GetVersionRequest{})
 		if err != nil {
-			fmt.Println("client:", version)
+			fmt.Printf("client: %s\n\n", version)
 			return fmt.Errorf("failed to get server version: %w", err)
 		}
 		fmt.Println("client:", version)

@@ -66,8 +66,8 @@ var getGCPTokenCmd = &cobra.Command{
 
 		var token any
 		var err error
-		if getTokenCmdFlags.grpcEndpoint != "" {
-			token, err = callGCPService(ctx)
+		if c := getTokenCmdFlags.grpcClient; c != nil {
+			token, err = callGCPService(ctx, c)
 		} else {
 			token, err = issueGCPToken(ctx)
 		}
@@ -156,9 +156,7 @@ func issueGCPToken(ctx context.Context) (bifröst.Token, error) {
 // gRPC service
 // ============
 
-func callGCPService(ctx context.Context) (any, error) {
-	client := bifröstpb.NewBifrostClient(getTokenCmdFlags.grpcClient)
-
+func callGCPService(ctx context.Context, client bifröstpb.BifrostClient) (any, error) {
 	var params bifröstpb.GCPParams
 
 	if aud := getGCPTokenCmdFlags.workloadIdentityProvider; aud != "" {

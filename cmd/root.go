@@ -24,7 +24,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"os"
@@ -34,8 +33,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
@@ -48,9 +45,6 @@ var rootCmdFlags struct {
 	KubeContext        string `json:"context"`
 	KubeNamespace      string `json:"namespace"`
 	KubeServiceAccount string `json:"serviceAccountName"`
-	TLSCAFile          string `json:"tlsCAFile"`
-	TLSSkipVerify      bool   `json:"tlsSkipVerify"`
-	DisableTLS         bool   `json:"disableTLS"`
 	GKEMetadata        string `json:"gkeMetadata"`
 
 	kubeServiceAccountToken string
@@ -77,12 +71,6 @@ func init() {
 		"Name of the kubeconfig context to use. Defaults to the current context in the kubeconfig file")
 	rootCmd.PersistentFlags().StringVarP(&rootCmdFlags.KubeNamespace, "namespace", "n", "",
 		"Kubernetes namespace to use. Defaults to the namespace of the context")
-	rootCmd.PersistentFlags().StringVar(&rootCmdFlags.TLSCAFile, "tls-ca-file", "/etc/bifrost/tls/ca.crt",
-		"Path to the TLS CA file")
-	rootCmd.PersistentFlags().BoolVar(&rootCmdFlags.TLSSkipVerify, "tls-skip-verify", false,
-		"Skip TLS certificate verification")
-	rootCmd.PersistentFlags().BoolVar(&rootCmdFlags.DisableTLS, "disable-tls", false,
-		"Disable TLS")
 	rootCmd.PersistentFlags().StringVarP(&rootCmdFlags.GKEMetadata, "gke-metadata", "g", "",
 		"The GKE metadata to use for token retrieval in the format cluster-project-id/cluster-location/cluster-name")
 }
@@ -200,18 +188,4 @@ func loadKubeConfig() (*rest.Config, error) {
 		}
 	}
 	return conf, nil
-}
-
-func getClientTransportCreds() (credentials.TransportCredentials, error) {
-	if rootCmdFlags.DisableTLS {
-		return insecure.NewCredentials(), nil
-	}
-	if rootCmdFlags.TLSSkipVerify {
-		return credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}), nil
-	}
-	creds, err := credentials.NewClientTLSFromFile(rootCmdFlags.TLSCAFile, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to load TLS CA file: %w", err)
-	}
-	return creds, nil
 }
