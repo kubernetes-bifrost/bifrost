@@ -65,10 +65,19 @@ var _ bifröst.IdentityProvider = Provider{}
 type Token struct{ oauth2.Token }
 
 type options struct {
+	serviceAccountEmail             *string
 	workloadIdentityProvider        string
 	defaultWorkloadIdentityProvider string
-	serviceAccountEmail             *string
 	impl                            implProvider
+}
+
+// WithServiceAccountEmail sets the service account email to impersonate.
+func WithServiceAccountEmail(email string) bifröst.ProviderOption {
+	return func(po any) {
+		if o, ok := po.(*options); ok {
+			o.serviceAccountEmail = &email
+		}
+	}
 }
 
 // WithWorkloadIdentityProvider sets the workload identity provider for
@@ -89,15 +98,6 @@ func WithDefaultWorkloadIdentityProvider(wip string) bifröst.ProviderOption {
 	return func(po any) {
 		if o, ok := po.(*options); ok {
 			o.defaultWorkloadIdentityProvider = wip
-		}
-	}
-}
-
-// WithServiceAccountEmail sets the service account email to impersonate.
-func WithServiceAccountEmail(email string) bifröst.ProviderOption {
-	return func(po any) {
-		if o, ok := po.(*options); ok {
-			o.serviceAccountEmail = &email
 		}
 	}
 }

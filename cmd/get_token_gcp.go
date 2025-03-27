@@ -45,17 +45,17 @@ import (
 )
 
 var getGCPTokenCmdFlags struct {
-	workloadIdentityProvider string
 	serviceAccountEmail      string
+	workloadIdentityProvider string
 }
 
 func init() {
 	getTokenCmd.AddCommand(getGCPTokenCmd)
 
-	getGCPTokenCmd.Flags().StringVarP(&getGCPTokenCmdFlags.workloadIdentityProvider, "workload-identity-provider", "w", "",
-		"The workload identity provider for using as audience for the service account token")
 	getGCPTokenCmd.Flags().StringVarP(&getGCPTokenCmdFlags.serviceAccountEmail, "service-account-email", "e", "",
 		"The email of the GCP service account to impersonate")
+	getGCPTokenCmd.Flags().StringVarP(&getGCPTokenCmdFlags.workloadIdentityProvider, "workload-identity-provider", "w", "",
+		"The workload identity provider for using as audience for the service account token")
 }
 
 var getGCPTokenCmd = &cobra.Command{
@@ -137,12 +137,12 @@ Expires At:   %[2]s (%[3]s)
 func issueGCPToken(ctx context.Context) (bifröst.Token, error) {
 	opts := getTokenCmdFlags.opts
 
-	if wip := getGCPTokenCmdFlags.workloadIdentityProvider; wip != "" {
-		opts = append(opts, bifröst.WithProviderOptions(gcp.WithWorkloadIdentityProvider(wip)))
-	}
-
 	if email := getGCPTokenCmdFlags.serviceAccountEmail; email != "" {
 		opts = append(opts, bifröst.WithProviderOptions(gcp.WithServiceAccountEmail(email)))
+	}
+
+	if wip := getGCPTokenCmdFlags.workloadIdentityProvider; wip != "" {
+		opts = append(opts, bifröst.WithProviderOptions(gcp.WithWorkloadIdentityProvider(wip)))
 	}
 
 	token, err := bifröst.GetToken(ctx, gcp.Provider{}, opts...)
@@ -159,12 +159,12 @@ func issueGCPToken(ctx context.Context) (bifröst.Token, error) {
 func callGCPService(ctx context.Context, client bifröstpb.BifrostClient) (any, error) {
 	var params bifröstpb.GCPParams
 
-	if aud := getGCPTokenCmdFlags.workloadIdentityProvider; aud != "" {
-		params.WorkloadIdentityProvider = aud
-	}
-
 	if email := getGCPTokenCmdFlags.serviceAccountEmail; email != "" {
 		params.ServiceAccountEmail = email
+	}
+
+	if aud := getGCPTokenCmdFlags.workloadIdentityProvider; aud != "" {
+		params.WorkloadIdentityProvider = aud
 	}
 
 	resp, err := client.GetToken(ctx, &bifröstpb.GetTokenRequest{
@@ -201,14 +201,14 @@ func getGCPOptionsAndProvider(params *bifröstpb.GCPParams, opts []bifröst.Opti
 	// is not necessary/does not make sense.
 	opts = append(opts, bifröst.WithIdentityProvider(nil))
 
-	if wip := params.GetWorkloadIdentityProvider(); wip != "" {
-		opts = append(opts, bifröst.WithProviderOptions(gcp.WithWorkloadIdentityProvider(wip)))
-		providerLoggerData["workloadIdentityProvider"] = wip
-	}
-
 	if email := params.GetServiceAccountEmail(); email != "" {
 		opts = append(opts, bifröst.WithProviderOptions(gcp.WithServiceAccountEmail(email)))
 		providerLoggerData["serviceAccountEmail"] = email
+	}
+
+	if wip := params.GetWorkloadIdentityProvider(); wip != "" {
+		opts = append(opts, bifröst.WithProviderOptions(gcp.WithWorkloadIdentityProvider(wip)))
+		providerLoggerData["workloadIdentityProvider"] = wip
 	}
 
 	return opts, gcp.Provider{}
