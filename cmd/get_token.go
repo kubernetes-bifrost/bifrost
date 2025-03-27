@@ -170,6 +170,9 @@ Expires At: %[3]s (%[4]s)
 				return fmt.Errorf("failed to create kubernetes client: %w", err)
 			}
 			if serviceAccountToken == "" && getCmdFlags.grpcEndpoint != "" {
+				if getTokenCmdFlags.outputFormat != outputFormatRaw {
+					fmt.Println("Fetching Kubernetes service account token...")
+				}
 				serviceAccountToken, err = newServiceAccountToken(ctx, kubeClient, serviceAccountRef)
 				if err != nil {
 					return err
@@ -239,7 +242,15 @@ Expires At: %[3]s (%[4]s)
 			clientInterceptor := func(ctx context.Context, method string, req, reply any,
 				cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 				ctx = metadata.AppendToOutgoingContext(ctx, metadataKeyServiceAccountToken, serviceAccountToken)
-				return invoker(ctx, method, req, reply, cc, opts...)
+				if err := invoker(ctx, method, req, reply, cc, opts...); err != nil {
+					switch msg := err.Error(); {
+					case strings.Contains(msg, "connection reset by peer"),
+						strings.Contains(msg, "error reading server preface: EOF"):
+						return fmt.Errorf("%w. is the server using TLS? try setting the TLS CA with --tls-ca-file or use --tls-skip-verify", err)
+					}
+					return err
+				}
+				return nil
 			}
 			var err error
 			getTokenCmdFlags.grpcConn, err = grpc.NewClient(getCmdFlags.grpcEndpoint,
