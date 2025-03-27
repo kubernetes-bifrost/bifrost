@@ -97,7 +97,7 @@ func init() {
 	serverCmd.Flags().IntVar(&serverCmdFlags.port, "port", 8080,
 		"Port to listen on")
 	serverCmd.Flags().IntVar(&serverCmdFlags.localPort, "local-port", 8081,
-		"Port to listen on over plain HTTP for local traffic from gRPC gateway")
+		"Port to listen on over plain gRPC (no TLS) for local traffic coming from gRPC gateway")
 	serverCmd.Flags().StringVar(&serverCmdFlags.tlsCertFile, "tls-cert-file", "/etc/bifrost/tls/tls.crt",
 		"Path to the TLS certificate file")
 	serverCmd.Flags().StringVar(&serverCmdFlags.tlsKeyFile, "tls-key-file", "/etc/bifrost/tls/tls.key",
@@ -135,7 +135,7 @@ spec.internalTrafficPolicy set to Local to direct traffic to the
 server only from pods running on the same node.
 `,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		localAddr := fmt.Sprintf("localhost:%d", serverCmdFlags.localPort)
+		localAddr := fmt.Sprintf("127.0.0.1:%d", serverCmdFlags.localPort)
 
 		// Get context and logger.
 		ctx := rootCmdFlags.ctx
@@ -213,7 +213,7 @@ server only from pods running on the same node.
 		}
 
 		// Configure gRPC service and gateway.
-		observabilityInterceptor := newServerObservabilityInterceptor(serviceLatencySecs, logger)
+		observabilityInterceptor := newServerObservabilityInterceptor(localAddr, serviceLatencySecs, logger)
 		serviceHandler := grpc.NewServer(grpc.ChainUnaryInterceptor(observabilityInterceptor))
 		gatewayOpts := []runtime.ServeMuxOption{
 			runtime.WithIncomingHeaderMatcher(gatewayHeaderMatcher),
@@ -331,7 +331,7 @@ func newServerKubeClient(ctx context.Context) (client.Client, error) {
 	})
 }
 
-func newServerObservabilityInterceptor(latencySecs *prometheus.SummaryVec,
+func newServerObservabilityInterceptor(localAddr string, latencySecs *prometheus.SummaryVec,
 	logger logrus.FieldLogger) grpc.UnaryServerInterceptor {
 
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo,
@@ -339,14 +339,27 @@ func newServerObservabilityInterceptor(latencySecs *prometheus.SummaryVec,
 
 		start := time.Now()
 
-		// Inject logger into context.
-		remoteAddr := metadata.ValueFromIncomingContext(ctx, metadataKeyRemoteAddr)
-		if len(remoteAddr) == 0 {
-			p, _ := peer.FromContext(ctx)
-			remoteAddr = []string{p.Addr.String()}
+		// Fetch remote address from context.
+		peer, ok := peer.FromContext(ctx)
+		if !ok {
+			const msg = "peer information is not available, cannot process request"
+			logger.WithField("method", info.FullMethod).Error(msg)
+			return nil, status.Error(codes.InvalidArgument, msg)
 		}
+		remoteAddr := peer.Addr.String()
+		if peer.LocalAddr.String() == localAddr {
+			v := metadata.ValueFromIncomingContext(ctx, metadataKeyRemoteAddr)
+			if len(v) == 0 {
+				const msg = "request arriving at the gateway port is missing remote address"
+				logger.WithField("method", info.FullMethod).Error(msg)
+				return nil, status.Error(codes.InvalidArgument, msg)
+			}
+			remoteAddr = v[0]
+		}
+
+		// Inject logger into context.
 		ctx = intoContext(ctx, logger.
-			WithField("remoteAddr", remoteAddr[0]).
+			WithField("remoteAddr", remoteAddr).
 			WithField("method", info.FullMethod))
 		logger := fromContext(ctx)
 
