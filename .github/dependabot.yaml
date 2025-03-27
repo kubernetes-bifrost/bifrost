@@ -28,13 +28,11 @@ updates:
 - package-ecosystem: gomod
   directories:
   - /
-  - /grpc
   - /providers/aws
   - /providers/azure
   - /providers/gcp
-  - /grpc/aws/go
-  - /grpc/azure/go
-  - /grpc/gcp/go
+  - /grpc
+  - /grpc/go
   - /cmd
   open-pull-requests-limit: 1
   schedule:
