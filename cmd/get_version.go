@@ -31,9 +31,6 @@ import (
 	bifröstpb "github.com/kubernetes-bifrost/bifrost/grpc/go"
 )
 
-var getVersionCmdFlags struct {
-}
-
 func init() {
 	getCmd.AddCommand(getVersionCmd)
 }
@@ -42,6 +39,10 @@ var getVersionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the versions of the Bifröst client and server",
 	RunE: func(*cobra.Command, []string) error {
+		if getCmdFlags.grpcEndpoint == "" {
+			fmt.Printf("client: %s\n", version)
+			return nil
+		}
 		conn, err := grpc.NewClient(getCmdFlags.grpcEndpoint, getCmdFlags.grpcClientCreds)
 		if err != nil {
 			fmt.Printf("client: %s\n\n", version)

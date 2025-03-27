@@ -27,7 +27,9 @@ package bifrost.v1;
 option go_package = "github.com/kubernetes-bifrost/bifrost/grpc/go;bifröstpb";
 
 import "google/protobuf/timestamp.proto";
+import "google/api/field_behavior.proto";
 import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
 
 service Bifrost {
 	rpc GetVersion (GetVersionRequest) returns (GetVersionResponse) {
@@ -39,6 +41,16 @@ service Bifrost {
 	rpc GetToken (GetTokenRequest) returns (GetTokenResponse) {
 		option (google.api.http) = {
 			get: "/v1/token"
+		};
+		option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+			parameters: {
+				headers: {
+					name: "X-Service-Account-Token";
+					description: "A Kubernetes service account token for authentication. This header is converted to the gRPC metadata key 'service-account-token'.";
+					type: STRING;
+					required: true;
+				};
+			};
 		};
 	}
 }
@@ -62,7 +74,7 @@ message GetVersionResponse {
 }
 
 message GetTokenRequest {
-	Provider provider = 1;
+	Provider provider = 1 [(google.api.field_behavior) = REQUIRED];
 	string container_registry = 2;
 
 	oneof provider_params {
@@ -75,7 +87,7 @@ message GetTokenRequest {
 message GetTokenResponse {
 	oneof token {
 		ContainerRegistryLogin registry_login = 1;
-		AWSAssumeRole aws = 100;
+		AWSToken aws = 100;
 		AzureToken azure = 101;
 		GCPToken gcp = 102;
 	}
@@ -86,7 +98,7 @@ message AWSParams {
 	string role_session_name = 2;
 }
 
-message AWSAssumeRole {
+message AWSToken {
 	string access_key_id = 1;
 	string secret_access_key = 2;
 	string session_token = 3;

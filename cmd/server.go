@@ -25,15 +25,18 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/go-openapi/runtime/middleware"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -56,6 +59,9 @@ import (
 	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 )
 
+//go:embed bifrost.swagger.json
+var rawSwaggerJSON []byte
+
 const (
 	metricsNamespace               = "bifrost"
 	metadataKeyRemoteAddr          = "remote-addr"
@@ -65,7 +71,6 @@ const (
 
 var serverCmdFlags struct {
 	port                               int
-	localPort                          int
 	tlsCertFile                        string
 	tlsKeyFile                         string
 	disableTLS                         bool
@@ -79,7 +84,6 @@ var serverCmdFlags struct {
 func serverCmdFlagsForLogger() logrus.Fields {
 	return logrus.Fields{
 		"port":                               serverCmdFlags.port,
-		"localPort":                          serverCmdFlags.localPort,
 		"tlsCertFile":                        serverCmdFlags.tlsCertFile,
 		"tlsKeyFile":                         serverCmdFlags.tlsKeyFile,
 		"disableTLS":                         serverCmdFlags.disableTLS,
@@ -96,8 +100,6 @@ func init() {
 
 	serverCmd.Flags().IntVar(&serverCmdFlags.port, "port", 8080,
 		"Port to listen on")
-	serverCmd.Flags().IntVar(&serverCmdFlags.localPort, "local-port", 8081,
-		"Port to listen on over plain gRPC (no TLS) for local traffic coming from gRPC gateway")
 	serverCmd.Flags().StringVar(&serverCmdFlags.tlsCertFile, "tls-cert-file", "/etc/bifrost/tls/tls.crt",
 		"Path to the TLS certificate file")
 	serverCmd.Flags().StringVar(&serverCmdFlags.tlsKeyFile, "tls-key-file", "/etc/bifrost/tls/tls.key",
@@ -135,7 +137,20 @@ spec.internalTrafficPolicy set to Local to direct traffic to the
 server only from pods running on the same node.
 `,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		localAddr := fmt.Sprintf("127.0.0.1:%d", serverCmdFlags.localPort)
+		// Replace the version in the swagger JSON with the build version.
+		var swaggerJSON []byte
+		{
+			var s map[string]any
+			if err := json.Unmarshal(rawSwaggerJSON, &s); err != nil {
+				return fmt.Errorf("failed to unmarshal swagger JSON: %w", err)
+			}
+			s["info"].(map[string]any)["version"] = version
+			b, err := json.MarshalIndent(s, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal swagger JSON: %w", err)
+			}
+			swaggerJSON = b
+		}
 
 		// Get context and logger.
 		ctx := rootCmdFlags.ctx
@@ -192,18 +207,11 @@ server only from pods running on the same node.
 		logger.Info("kubernetes cache started")
 
 		// Create metrics.
-		serviceLatencySecs := promauto.NewSummaryVec(prometheus.SummaryOpts{
+		latencySecs := promauto.NewSummaryVec(prometheus.SummaryOpts{
 			Help:      "gRPC server request latency in seconds.",
 			Namespace: metricsNamespace,
-			Subsystem: "grpc",
 			Name:      "request_latency_seconds",
 		}, []string{"method", "status"})
-		gatewayLatencySecs := promauto.NewSummaryVec(prometheus.SummaryOpts{
-			Help:      "gRPC gateway request latency in seconds.",
-			Namespace: metricsNamespace,
-			Subsystem: "http",
-			Name:      "request_latency_seconds",
-		}, []string{"method", "path", "status"})
 
 		// Create token cache if enabled.
 		var cache bifröst.Cache
@@ -212,16 +220,28 @@ server only from pods running on the same node.
 				bifröst.WithMaxDuration(serverCmdFlags.tokenCacheMaxDuration))
 		}
 
+		// Start listeners.
+		lis, err := net.Listen("tcp", fmt.Sprintf(":%d", serverCmdFlags.port))
+		if err != nil {
+			return fmt.Errorf("failed to listen on port %d: %w", serverCmdFlags.port, err)
+		}
+		defer lis.Close()
+		localLis, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return fmt.Errorf("failed to listen on a random local port for gRPC gateway requests: %w", err)
+		}
+		defer localLis.Close()
+		localAddr := localLis.Addr().String()
+
 		// Configure gRPC service and gateway.
-		observabilityInterceptor := newServerObservabilityInterceptor(localAddr, serviceLatencySecs, logger)
-		serviceHandler := grpc.NewServer(grpc.ChainUnaryInterceptor(observabilityInterceptor))
+		observabilityInterceptor := newServerObservabilityInterceptor(localAddr, latencySecs, logger)
+		serviceHandler := grpc.NewServer(grpc.UnaryInterceptor(observabilityInterceptor))
 		gatewayOpts := []runtime.ServeMuxOption{
 			runtime.WithIncomingHeaderMatcher(gatewayHeaderMatcher),
 			runtime.WithMetadata(gatewayMetadata),
 		}
-		gatewayMux := runtime.NewServeMux(gatewayOpts...)
-		gatewayHandler := newGatewayObservabilityMiddleware(gatewayLatencySecs, gatewayMux)
-		err = registerBifrostService(ctx, kubeClient, cache, opts, serviceHandler, gatewayMux, localAddr)
+		gatewayHandler := runtime.NewServeMux(gatewayOpts...)
+		err = registerBifrostService(ctx, kubeClient, cache, opts, serviceHandler, gatewayHandler, localAddr)
 		if err != nil {
 			return err
 		}
@@ -233,6 +253,9 @@ server only from pods running on the same node.
 				ErrorLog:          promLogger,
 			}))
 
+		// Create swagger handler.
+		swaggerHandler := middleware.SwaggerUI(middleware.SwaggerUIOpts{}, nil)
+
 		// Create main handler.
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
@@ -240,6 +263,11 @@ server only from pods running on the same node.
 				w.WriteHeader(http.StatusOK)
 			case r.URL.Path == "/metrics":
 				metricsHandler.ServeHTTP(w, r)
+			case r.URL.Path == "/swagger.json":
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(swaggerJSON)
+			case r.URL.Path == "/docs":
+				swaggerHandler.ServeHTTP(w, r)
 			case r.ProtoMajor == 2 && strings.Contains(r.Header.Get("Content-Type"), "application/grpc"):
 				serviceHandler.ServeHTTP(w, r)
 			default:
@@ -263,16 +291,16 @@ server only from pods running on the same node.
 			WithField("serverFlags", serverCmdFlagsForLogger()).
 			Info("server started")
 		go func() {
-			if err := localServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			if err := localServer.Serve(localLis); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				logger.WithError(err).Fatal("local server failed")
 			}
 		}()
 		go func() {
 			var err error
 			if serverCmdFlags.disableTLS {
-				err = server.ListenAndServe()
+				err = server.Serve(lis)
 			} else {
-				err = server.ListenAndServeTLS(serverCmdFlags.tlsCertFile, serverCmdFlags.tlsKeyFile)
+				err = server.ServeTLS(lis, serverCmdFlags.tlsCertFile, serverCmdFlags.tlsKeyFile)
 			}
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				logger.WithError(err).Fatal("server failed")
@@ -439,38 +467,4 @@ func gatewayHeaderMatcher(key string) (string, bool) {
 
 func gatewayMetadata(ctx context.Context, r *http.Request) metadata.MD {
 	return metadata.Pairs(metadataKeyRemoteAddr, r.RemoteAddr)
-}
-
-func newGatewayObservabilityMiddleware(latencySecs *prometheus.SummaryVec, handler http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		statusRecorder := &gatewayStatusRecorder{ResponseWriter: w}
-		w = statusRecorder
-
-		start := time.Now()
-		handler.ServeHTTP(w, r)
-		latency := time.Since(start)
-
-		status := fmt.Sprint(statusRecorder.getStatus())
-		latencySecs.
-			WithLabelValues(r.Method, r.URL.Path, status).
-			Observe(latency.Seconds())
-	})
-}
-
-type gatewayStatusRecorder struct {
-	http.ResponseWriter
-
-	status int
-}
-
-func (s *gatewayStatusRecorder) WriteHeader(status int) {
-	s.status = status
-	s.ResponseWriter.WriteHeader(status)
-}
-
-func (s *gatewayStatusRecorder) getStatus() int {
-	if s.status == 0 {
-		return http.StatusOK
-	}
-	return s.status
 }

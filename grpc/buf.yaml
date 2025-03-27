@@ -24,3 +24,4 @@ version: v2
 name: buf.build/kubernetes-bifrost/bifrost
 deps:
 - buf.build/googleapis/googleapis
+- buf.build/grpc-ecosystem/grpc-gateway
