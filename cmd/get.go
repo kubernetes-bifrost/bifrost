@@ -51,7 +51,7 @@ func init() {
 	getCmd.PersistentFlags().StringVar(&getCmdFlags.tlsCAFile, "tls-ca-file", getCmdDefaultTLSCAFile,
 		"Path to the TLS CA file")
 	getCmd.PersistentFlags().BoolVar(&getCmdFlags.tlsSkipVerify, "tls-skip-verify", false,
-		"Skip TLS certificate verification")
+		"Skip TLS certificate verification (insecure)")
 }
 
 var getCmd = &cobra.Command{
