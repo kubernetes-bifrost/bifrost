@@ -75,6 +75,7 @@ var getTokenCmdFlags struct {
 	debugProxy        *http.Server
 	grpcConn          *grpc.ClientConn
 	grpcClient        bifröstpb.BifrostClient
+	printProgressInfo bool
 }
 
 func init() {
@@ -99,6 +100,11 @@ var getTokenCmd = &cobra.Command{
 	Short: "Get a token for accessing resources on a cloud provider",
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		ctx := rootCmdFlags.ctx
+
+		// Set print progress info to true if output format is reflect or not set.
+		if of := getTokenCmdFlags.outputFormat; of == outputFormatReflect || of == "" {
+			getTokenCmdFlags.printProgressInfo = true
+		}
 
 		// Parse output format.
 		switch getTokenCmdFlags.outputFormat {
@@ -148,38 +154,6 @@ Expires At: %[3]s (%[4]s)
 				allowedOutputFormats)
 		}
 
-		// Parse service account reference and create token if calling the gRPC endpoint.
-		var kubeClient client.Client
-		var serviceAccountRef *client.ObjectKey
-		var serviceAccountToken string
-		if getTokenCmdFlags.serviceAccount == "" {
-			getTokenCmdFlags.serviceAccount = rootCmdFlags.KubeServiceAccount
-			serviceAccountToken = rootCmdFlags.kubeServiceAccountToken
-		}
-		if getTokenCmdFlags.serviceAccount != "" {
-			if rootCmdFlags.KubeNamespace == "" {
-				return fmt.Errorf("namespace is required for using a kubernetes service account")
-			}
-			serviceAccountRef = &client.ObjectKey{
-				Name:      getTokenCmdFlags.serviceAccount,
-				Namespace: rootCmdFlags.KubeNamespace,
-			}
-			var err error
-			kubeClient, err = client.New(rootCmdFlags.kubeRESTConfig, client.Options{})
-			if err != nil {
-				return fmt.Errorf("failed to create kubernetes client: %w", err)
-			}
-			if serviceAccountToken == "" && getCmdFlags.grpcEndpoint != "" {
-				if of := getTokenCmdFlags.outputFormat; of == outputFormatReflect || of == "" {
-					fmt.Println("Fetching Kubernetes service account token...")
-				}
-				serviceAccountToken, err = newServiceAccountToken(ctx, kubeClient, serviceAccountRef)
-				if err != nil {
-					return err
-				}
-			}
-		}
-
 		// Parse proxy URL.
 		if getTokenCmdFlags.proxyURLString == "" {
 			getTokenCmdFlags.proxyURLString = os.Getenv(envProxyURL)
@@ -211,6 +185,41 @@ Expires At: %[3]s (%[4]s)
 			getTokenCmdFlags.proxyURL = proxyURL
 		}
 
+		// Parse service account reference and create token if calling the gRPC endpoint.
+		var kubeClient client.Client
+		var serviceAccountRef *client.ObjectKey
+		var serviceAccountToken string
+		if getTokenCmdFlags.serviceAccount == "" {
+			getTokenCmdFlags.serviceAccount = rootCmdFlags.KubeServiceAccount
+			serviceAccountToken = rootCmdFlags.kubeServiceAccountToken
+		}
+		if getTokenCmdFlags.serviceAccount != "" {
+			if rootCmdFlags.KubeNamespace == "" {
+				return fmt.Errorf("namespace is required for using a kubernetes service account")
+			}
+			serviceAccountRef = &client.ObjectKey{
+				Name:      getTokenCmdFlags.serviceAccount,
+				Namespace: rootCmdFlags.KubeNamespace,
+			}
+			var err error
+			kubeClient, err = client.New(rootCmdFlags.kubeRESTConfig, client.Options{})
+			if err != nil {
+				return fmt.Errorf("failed to create kubernetes client: %w", err)
+			}
+			if serviceAccountToken == "" && getCmdFlags.grpcEndpoint != "" {
+				if getTokenCmdFlags.printProgressInfo {
+					fmt.Println("Fetching Kubernetes service account token...")
+				}
+				serviceAccountToken, err = newServiceAccountToken(ctx, kubeClient, serviceAccountRef)
+				if err != nil {
+					return err
+				}
+				if getTokenCmdFlags.printProgressInfo {
+					fmt.Println("Fetched Kubernetes service account token.")
+				}
+			}
+		}
+
 		// Build options.
 		var opts []bifröst.Option
 		if serviceAccountRef != nil {
@@ -219,8 +228,20 @@ Expires At: %[3]s (%[4]s)
 		if cmd.Name() != gcp.ProviderName {
 			// Detect if running on GKE. If yes, use GCP as the identity provider
 			// for getting access to resources in other cloud providers.
+			if getTokenCmdFlags.printProgressInfo {
+				fmt.Println("Check if identity provider is required...")
+			}
 			if gcp.OnGKE(ctx) {
+				if getTokenCmdFlags.printProgressInfo {
+					fmt.Printf("Process is running on GKE and token was requested for %s, "+
+						"using GCP as the identity provider is necessary.\n",
+						cmd.Name())
+				}
 				opts = append(opts, bifröst.WithIdentityProvider(gcp.Provider{}))
+			} else {
+				if getTokenCmdFlags.printProgressInfo {
+					fmt.Println("No identity provider is required.")
+				}
 			}
 		}
 		if getTokenCmdFlags.proxyURL != nil {
@@ -252,11 +273,17 @@ Expires At: %[3]s (%[4]s)
 				}
 				return nil
 			}
+			if getTokenCmdFlags.printProgressInfo {
+				fmt.Println("Connecting to the gRPC server...")
+			}
 			var err error
 			getTokenCmdFlags.grpcConn, err = grpc.NewClient(getCmdFlags.grpcEndpoint,
 				getCmdFlags.grpcClientCreds, grpc.WithUnaryInterceptor(clientInterceptor))
 			if err != nil {
 				return fmt.Errorf("failed to create gRPC client: %w", err)
+			}
+			if getTokenCmdFlags.printProgressInfo {
+				fmt.Println("Connected to the gRPC server.")
 			}
 			getTokenCmdFlags.grpcClient = bifröstpb.NewBifrostClient(getTokenCmdFlags.grpcConn)
 		}

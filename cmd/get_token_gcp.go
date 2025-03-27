@@ -64,6 +64,9 @@ var getGCPTokenCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx := rootCmdFlags.ctx
 
+		if getTokenCmdFlags.printProgressInfo {
+			fmt.Println("Retrieving GCP access token...")
+		}
 		var token any
 		var err error
 		if c := getTokenCmdFlags.grpcClient; c != nil {
@@ -73,6 +76,9 @@ var getGCPTokenCmd = &cobra.Command{
 		}
 		if err != nil {
 			return err
+		}
+		if getTokenCmdFlags.printProgressInfo {
+			fmt.Println("Retrieved GCP access token.")
 		}
 
 		if getTokenCmdFlags.outputFormatter != nil {
@@ -86,11 +92,60 @@ var getGCPTokenCmd = &cobra.Command{
 			return nil
 		}
 
-		return printAccesstoken(ctx, gcpToken)
+		var email string
+		if getTokenCmdFlags.outputFormat == outputFormatReflect {
+			if getTokenCmdFlags.printProgressInfo {
+				fmt.Println("Reflecting the GCP access token...")
+			}
+			email, err = reflectGCPToken(ctx, gcpToken)
+			if err != nil {
+				return err
+			}
+			if getTokenCmdFlags.printProgressInfo {
+				fmt.Println("Reflected GCP access token.")
+			}
+		}
+
+		printGCPToken(gcpToken, email)
+
+		return nil
 	},
 }
 
-func printAccesstoken(ctx context.Context, t *gcp.Token) error {
+func reflectGCPToken(ctx context.Context, token *gcp.Token) (string, error) {
+	email := "DirectAccess"
+	tokenInfoURL := (&url.URL{
+		Scheme: "https",
+		Host:   "www.googleapis.com",
+		Path:   "/oauth2/v3/tokeninfo",
+		RawQuery: url.Values{
+			"access_token": []string{token.AccessToken},
+		}.Encode(),
+	}).String()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenInfoURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create gcp token info request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to get gcp token info: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		email = "DirectAccess"
+	} else {
+		var info struct {
+			Email string `json:"email"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+			return "", fmt.Errorf("failed to decode gcp token info: %w", err)
+		}
+		email = info.Email
+	}
+	return email, nil
+}
+
+func printGCPToken(t *gcp.Token, email string) {
 	fmt.Printf(`Access Token: %[1]s
 Expires At:   %[2]s (%[3]s)
 `,
@@ -98,40 +153,9 @@ Expires At:   %[2]s (%[3]s)
 		t.Expiry.Format(time.RFC3339),
 		t.GetDuration().String())
 
-	if getTokenCmdFlags.outputFormat == outputFormatReflect {
-		email := "DirectAccess"
-		tokenInfoURL := (&url.URL{
-			Scheme: "https",
-			Host:   "www.googleapis.com",
-			Path:   "/oauth2/v3/tokeninfo",
-			RawQuery: url.Values{
-				"access_token": []string{t.AccessToken},
-			}.Encode(),
-		}).String()
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenInfoURL, nil)
-		if err != nil {
-			return fmt.Errorf("failed to create token info request: %w", err)
-		}
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return fmt.Errorf("failed to get token info: %w", err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			email = "DirectAccess"
-		} else {
-			var info struct {
-				Email string `json:"email"`
-			}
-			if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-				return fmt.Errorf("failed to decode token info: %w", err)
-			}
-			email = info.Email
-		}
+	if email != "" {
 		fmt.Printf("Email:        %s\n", email)
 	}
-
-	return nil
 }
 
 func issueGCPToken(ctx context.Context) (bifröst.Token, error) {
