@@ -56,4 +56,5 @@ run: bin/bifrost
 	./bin/bifrost server \
 		--log-level=debug \
 		--tls-cert-file=cmd/testdata/tls.crt \
-		--tls-key-file=cmd/testdata/tls.key
+		--tls-key-file=cmd/testdata/tls.key \
+		--gke-metadata=kubernetes-bifrost/us-central1/autopilot-cluster-1

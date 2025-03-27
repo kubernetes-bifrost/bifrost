@@ -48,8 +48,6 @@ var rootCmdFlags struct {
 	KubeContext        string `json:"context"`
 	KubeNamespace      string `json:"namespace"`
 	KubeServiceAccount string `json:"serviceAccountName"`
-	TLSCertFile        string `json:"tlsCertFile"`
-	TLSKeyFile         string `json:"tlsKeyFile"`
 	TLSCAFile          string `json:"tlsCAFile"`
 	TLSSkipVerify      bool   `json:"tlsSkipVerify"`
 	DisableTLS         bool   `json:"disableTLS"`
@@ -79,10 +77,6 @@ func init() {
 		"Name of the kubeconfig context to use. Defaults to the current context in the kubeconfig file")
 	rootCmd.PersistentFlags().StringVarP(&rootCmdFlags.KubeNamespace, "namespace", "n", "",
 		"Kubernetes namespace to use. Defaults to the namespace of the context")
-	rootCmd.PersistentFlags().StringVar(&rootCmdFlags.TLSCertFile, "tls-cert-file", "/etc/bifrost/tls/tls.crt",
-		"Path to the TLS certificate file")
-	rootCmd.PersistentFlags().StringVar(&rootCmdFlags.TLSKeyFile, "tls-key-file", "/etc/bifrost/tls/tls.key",
-		"Path to the TLS key file")
 	rootCmd.PersistentFlags().StringVar(&rootCmdFlags.TLSCAFile, "tls-ca-file", "/etc/bifrost/tls/ca.crt",
 		"Path to the TLS CA file")
 	rootCmd.PersistentFlags().BoolVar(&rootCmdFlags.TLSSkipVerify, "tls-skip-verify", false,
