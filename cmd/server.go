@@ -336,13 +336,13 @@ func newServerObservabilityInterceptor(latencySecs *prometheus.SummaryVec,
 		start := time.Now()
 
 		// Inject logger into context.
-		v := metadata.ValueFromIncomingContext(ctx, metadataKeyRemoteAddr)
-		if len(v) == 0 {
+		remoteAddr := metadata.ValueFromIncomingContext(ctx, metadataKeyRemoteAddr)
+		if len(remoteAddr) == 0 {
 			p, _ := peer.FromContext(ctx)
-			v = []string{p.Addr.String()}
+			remoteAddr = []string{p.Addr.String()}
 		}
 		ctx = intoContext(ctx, logger.
-			WithField("remoteAddr", v[0]).
+			WithField("remoteAddr", remoteAddr[0]).
 			WithField("method", info.FullMethod))
 		logger := fromContext(ctx)
 
