@@ -349,8 +349,8 @@ func newServerObservabilityInterceptor(localAddr string, latencySecs *prometheus
 		remoteAddr := peer.Addr.String()
 		if peer.LocalAddr.String() == localAddr {
 			v := metadata.ValueFromIncomingContext(ctx, metadataKeyRemoteAddr)
-			if len(v) == 0 {
-				const msg = "request arriving at the gateway port is missing remote address"
+			if len(v) != 1 || v[0] == "" {
+				const msg = "request arriving at the local port for gRPC gateway is missing remote address"
 				logger.WithField("method", info.FullMethod).Error(msg)
 				return nil, status.Error(codes.InvalidArgument, msg)
 			}
