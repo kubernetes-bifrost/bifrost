@@ -16,9 +16,9 @@ require (
 	github.com/go-openapi/runtime v0.28.0
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3
-	github.com/kubernetes-bifrost/bifrost v0.17.0
-	github.com/kubernetes-bifrost/bifrost/grpc/go v0.17.0
-	github.com/kubernetes-bifrost/bifrost/providers/gcp v0.17.0
+	github.com/kubernetes-bifrost/bifrost v0.18.0
+	github.com/kubernetes-bifrost/bifrost/grpc/go v0.18.0
+	github.com/kubernetes-bifrost/bifrost/providers/gcp v0.18.0
 	github.com/prometheus/client_golang v1.21.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
