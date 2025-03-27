@@ -1,0 +1,300 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "bifrost.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "Bifrost"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/token": {
+      "get": {
+        "operationId": "Bifrost_GetToken",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetTokenResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "aws",
+              "azure",
+              "gcp"
+            ],
+            "default": "aws"
+          },
+          {
+            "name": "containerRegistry",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "aws.roleArn",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "aws.roleSessionName",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "azure.clientId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "azure.tenantId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "azure.scopes",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
+          },
+          {
+            "name": "gcp.serviceAccountEmail",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "gcp.workloadIdentityProvider",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "Bifrost"
+        ]
+      }
+    },
+    "/v1/version": {
+      "get": {
+        "operationId": "Bifrost_GetVersion",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetVersionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "Bifrost"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1AWSAssumeRole": {
+      "type": "object",
+      "properties": {
+        "accessKeyId": {
+          "type": "string"
+        },
+        "secretAccessKey": {
+          "type": "string"
+        },
+        "sessionToken": {
+          "type": "string"
+        },
+        "expiration": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1AWSParams": {
+      "type": "object",
+      "properties": {
+        "roleArn": {
+          "type": "string"
+        },
+        "roleSessionName": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AzureParams": {
+      "type": "object",
+      "properties": {
+        "clientId": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1AzureToken": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string"
+        },
+        "expiresOn": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1ContainerRegistryLogin": {
+      "type": "object",
+      "properties": {
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1GCPParams": {
+      "type": "object",
+      "properties": {
+        "serviceAccountEmail": {
+          "type": "string"
+        },
+        "workloadIdentityProvider": {
+          "type": "string"
+        }
+      }
+    },
+    "v1GCPToken": {
+      "type": "object",
+      "properties": {
+        "accessToken": {
+          "type": "string"
+        },
+        "tokenType": {
+          "type": "string"
+        },
+        "refreshToken": {
+          "type": "string"
+        },
+        "expiry": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresIn": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1GetTokenResponse": {
+      "type": "object",
+      "properties": {
+        "registryLogin": {
+          "$ref": "#/definitions/v1ContainerRegistryLogin"
+        },
+        "aws": {
+          "$ref": "#/definitions/v1AWSAssumeRole"
+        },
+        "azure": {
+          "$ref": "#/definitions/v1AzureToken"
+        },
+        "gcp": {
+          "$ref": "#/definitions/v1GCPToken"
+        }
+      }
+    },
+    "v1GetVersionResponse": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Provider": {
+      "type": "string",
+      "enum": [
+        "aws",
+        "azure",
+        "gcp"
+      ],
+      "default": "aws"
+    }
+  }
+}

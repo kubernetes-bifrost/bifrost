@@ -45,6 +45,55 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type Provider int32
+
+const (
+	Provider_aws   Provider = 0
+	Provider_azure Provider = 1
+	Provider_gcp   Provider = 2
+)
+
+// Enum value maps for Provider.
+var (
+	Provider_name = map[int32]string{
+		0: "aws",
+		1: "azure",
+		2: "gcp",
+	}
+	Provider_value = map[string]int32{
+		"aws":   0,
+		"azure": 1,
+		"gcp":   2,
+	}
+)
+
+func (x Provider) Enum() *Provider {
+	p := new(Provider)
+	*p = x
+	return p
+}
+
+func (x Provider) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Provider) Descriptor() protoreflect.EnumDescriptor {
+	return file_bifrost_proto_enumTypes[0].Descriptor()
+}
+
+func (Provider) Type() protoreflect.EnumType {
+	return &file_bifrost_proto_enumTypes[0]
+}
+
+func (x Provider) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Provider.Descriptor instead.
+func (Provider) EnumDescriptor() ([]byte, []int) {
+	return file_bifrost_proto_rawDescGZIP(), []int{0}
+}
+
 type ContainerRegistryLogin struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Username      string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
@@ -187,10 +236,13 @@ func (x *GetVersionResponse) GetVersion() string {
 
 type GetTokenRequest struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
-	ContainerRegistry string                 `protobuf:"bytes,1,opt,name=container_registry,json=containerRegistry,proto3" json:"container_registry,omitempty"`
+	Provider          Provider               `protobuf:"varint,1,opt,name=provider,proto3,enum=bifrost.v1.Provider" json:"provider,omitempty"`
+	ContainerRegistry string                 `protobuf:"bytes,2,opt,name=container_registry,json=containerRegistry,proto3" json:"container_registry,omitempty"`
 	// Types that are valid to be assigned to ProviderParams:
 	//
-	//	*GetTokenRequest_GCP
+	//	*GetTokenRequest_Aws
+	//	*GetTokenRequest_Azure
+	//	*GetTokenRequest_Gcp
 	ProviderParams isGetTokenRequest_ProviderParams `protobuf_oneof:"provider_params"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -226,6 +278,13 @@ func (*GetTokenRequest) Descriptor() ([]byte, []int) {
 	return file_bifrost_proto_rawDescGZIP(), []int{3}
 }
 
+func (x *GetTokenRequest) GetProvider() Provider {
+	if x != nil {
+		return x.Provider
+	}
+	return Provider_aws
+}
+
 func (x *GetTokenRequest) GetContainerRegistry() string {
 	if x != nil {
 		return x.ContainerRegistry
@@ -240,10 +299,28 @@ func (x *GetTokenRequest) GetProviderParams() isGetTokenRequest_ProviderParams {
 	return nil
 }
 
-func (x *GetTokenRequest) GetGCP() *GCPParams {
+func (x *GetTokenRequest) GetAws() *AWSParams {
 	if x != nil {
-		if x, ok := x.ProviderParams.(*GetTokenRequest_GCP); ok {
-			return x.GCP
+		if x, ok := x.ProviderParams.(*GetTokenRequest_Aws); ok {
+			return x.Aws
+		}
+	}
+	return nil
+}
+
+func (x *GetTokenRequest) GetAzure() *AzureParams {
+	if x != nil {
+		if x, ok := x.ProviderParams.(*GetTokenRequest_Azure); ok {
+			return x.Azure
+		}
+	}
+	return nil
+}
+
+func (x *GetTokenRequest) GetGcp() *GCPParams {
+	if x != nil {
+		if x, ok := x.ProviderParams.(*GetTokenRequest_Gcp); ok {
+			return x.Gcp
 		}
 	}
 	return nil
@@ -253,18 +330,32 @@ type isGetTokenRequest_ProviderParams interface {
 	isGetTokenRequest_ProviderParams()
 }
 
-type GetTokenRequest_GCP struct {
-	GCP *GCPParams `protobuf:"bytes,2,opt,name=GCP,proto3,oneof"`
+type GetTokenRequest_Aws struct {
+	Aws *AWSParams `protobuf:"bytes,100,opt,name=aws,proto3,oneof"`
 }
 
-func (*GetTokenRequest_GCP) isGetTokenRequest_ProviderParams() {}
+type GetTokenRequest_Azure struct {
+	Azure *AzureParams `protobuf:"bytes,101,opt,name=azure,proto3,oneof"`
+}
+
+type GetTokenRequest_Gcp struct {
+	Gcp *GCPParams `protobuf:"bytes,102,opt,name=gcp,proto3,oneof"`
+}
+
+func (*GetTokenRequest_Aws) isGetTokenRequest_ProviderParams() {}
+
+func (*GetTokenRequest_Azure) isGetTokenRequest_ProviderParams() {}
+
+func (*GetTokenRequest_Gcp) isGetTokenRequest_ProviderParams() {}
 
 type GetTokenResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Token:
 	//
 	//	*GetTokenResponse_RegistryLogin
-	//	*GetTokenResponse_GCP
+	//	*GetTokenResponse_Aws
+	//	*GetTokenResponse_Azure
+	//	*GetTokenResponse_Gcp
 	Token         isGetTokenResponse_Token `protobuf_oneof:"token"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -316,10 +407,28 @@ func (x *GetTokenResponse) GetRegistryLogin() *ContainerRegistryLogin {
 	return nil
 }
 
-func (x *GetTokenResponse) GetGCP() *GCPToken {
+func (x *GetTokenResponse) GetAws() *AWSAssumeRole {
 	if x != nil {
-		if x, ok := x.Token.(*GetTokenResponse_GCP); ok {
-			return x.GCP
+		if x, ok := x.Token.(*GetTokenResponse_Aws); ok {
+			return x.Aws
+		}
+	}
+	return nil
+}
+
+func (x *GetTokenResponse) GetAzure() *AzureToken {
+	if x != nil {
+		if x, ok := x.Token.(*GetTokenResponse_Azure); ok {
+			return x.Azure
+		}
+	}
+	return nil
+}
+
+func (x *GetTokenResponse) GetGcp() *GCPToken {
+	if x != nil {
+		if x, ok := x.Token.(*GetTokenResponse_Gcp); ok {
+			return x.Gcp
 		}
 	}
 	return nil
@@ -333,25 +442,269 @@ type GetTokenResponse_RegistryLogin struct {
 	RegistryLogin *ContainerRegistryLogin `protobuf:"bytes,1,opt,name=registry_login,json=registryLogin,proto3,oneof"`
 }
 
-type GetTokenResponse_GCP struct {
-	GCP *GCPToken `protobuf:"bytes,2,opt,name=GCP,proto3,oneof"`
+type GetTokenResponse_Aws struct {
+	Aws *AWSAssumeRole `protobuf:"bytes,100,opt,name=aws,proto3,oneof"`
+}
+
+type GetTokenResponse_Azure struct {
+	Azure *AzureToken `protobuf:"bytes,101,opt,name=azure,proto3,oneof"`
+}
+
+type GetTokenResponse_Gcp struct {
+	Gcp *GCPToken `protobuf:"bytes,102,opt,name=gcp,proto3,oneof"`
 }
 
 func (*GetTokenResponse_RegistryLogin) isGetTokenResponse_Token() {}
 
-func (*GetTokenResponse_GCP) isGetTokenResponse_Token() {}
+func (*GetTokenResponse_Aws) isGetTokenResponse_Token() {}
+
+func (*GetTokenResponse_Azure) isGetTokenResponse_Token() {}
+
+func (*GetTokenResponse_Gcp) isGetTokenResponse_Token() {}
+
+type AWSParams struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	RoleArn         string                 `protobuf:"bytes,1,opt,name=role_arn,json=roleArn,proto3" json:"role_arn,omitempty"`
+	RoleSessionName string                 `protobuf:"bytes,2,opt,name=role_session_name,json=roleSessionName,proto3" json:"role_session_name,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *AWSParams) Reset() {
+	*x = AWSParams{}
+	mi := &file_bifrost_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AWSParams) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AWSParams) ProtoMessage() {}
+
+func (x *AWSParams) ProtoReflect() protoreflect.Message {
+	mi := &file_bifrost_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AWSParams.ProtoReflect.Descriptor instead.
+func (*AWSParams) Descriptor() ([]byte, []int) {
+	return file_bifrost_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *AWSParams) GetRoleArn() string {
+	if x != nil {
+		return x.RoleArn
+	}
+	return ""
+}
+
+func (x *AWSParams) GetRoleSessionName() string {
+	if x != nil {
+		return x.RoleSessionName
+	}
+	return ""
+}
+
+type AWSAssumeRole struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	AccessKeyId     string                 `protobuf:"bytes,1,opt,name=access_key_id,json=accessKeyId,proto3" json:"access_key_id,omitempty"`
+	SecretAccessKey string                 `protobuf:"bytes,2,opt,name=secret_access_key,json=secretAccessKey,proto3" json:"secret_access_key,omitempty"`
+	SessionToken    string                 `protobuf:"bytes,3,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
+	Expiration      *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expiration,proto3" json:"expiration,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *AWSAssumeRole) Reset() {
+	*x = AWSAssumeRole{}
+	mi := &file_bifrost_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AWSAssumeRole) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AWSAssumeRole) ProtoMessage() {}
+
+func (x *AWSAssumeRole) ProtoReflect() protoreflect.Message {
+	mi := &file_bifrost_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AWSAssumeRole.ProtoReflect.Descriptor instead.
+func (*AWSAssumeRole) Descriptor() ([]byte, []int) {
+	return file_bifrost_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *AWSAssumeRole) GetAccessKeyId() string {
+	if x != nil {
+		return x.AccessKeyId
+	}
+	return ""
+}
+
+func (x *AWSAssumeRole) GetSecretAccessKey() string {
+	if x != nil {
+		return x.SecretAccessKey
+	}
+	return ""
+}
+
+func (x *AWSAssumeRole) GetSessionToken() string {
+	if x != nil {
+		return x.SessionToken
+	}
+	return ""
+}
+
+func (x *AWSAssumeRole) GetExpiration() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Expiration
+	}
+	return nil
+}
+
+type AzureParams struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ClientId      string                 `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	TenantId      string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Scopes        []string               `protobuf:"bytes,3,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AzureParams) Reset() {
+	*x = AzureParams{}
+	mi := &file_bifrost_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AzureParams) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AzureParams) ProtoMessage() {}
+
+func (x *AzureParams) ProtoReflect() protoreflect.Message {
+	mi := &file_bifrost_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AzureParams.ProtoReflect.Descriptor instead.
+func (*AzureParams) Descriptor() ([]byte, []int) {
+	return file_bifrost_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *AzureParams) GetClientId() string {
+	if x != nil {
+		return x.ClientId
+	}
+	return ""
+}
+
+func (x *AzureParams) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *AzureParams) GetScopes() []string {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
+}
+
+type AzureToken struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	ExpiresOn     *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=expires_on,json=expiresOn,proto3" json:"expires_on,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AzureToken) Reset() {
+	*x = AzureToken{}
+	mi := &file_bifrost_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AzureToken) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AzureToken) ProtoMessage() {}
+
+func (x *AzureToken) ProtoReflect() protoreflect.Message {
+	mi := &file_bifrost_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AzureToken.ProtoReflect.Descriptor instead.
+func (*AzureToken) Descriptor() ([]byte, []int) {
+	return file_bifrost_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *AzureToken) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *AzureToken) GetExpiresOn() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresOn
+	}
+	return nil
+}
 
 type GCPParams struct {
 	state                    protoimpl.MessageState `protogen:"open.v1"`
-	WorkloadIdentityProvider string                 `protobuf:"bytes,1,opt,name=workloadIdentityProvider,proto3" json:"workloadIdentityProvider,omitempty"`
-	ServiceAccountEmail      string                 `protobuf:"bytes,2,opt,name=serviceAccountEmail,proto3" json:"serviceAccountEmail,omitempty"`
+	ServiceAccountEmail      string                 `protobuf:"bytes,1,opt,name=service_account_email,json=serviceAccountEmail,proto3" json:"service_account_email,omitempty"`
+	WorkloadIdentityProvider string                 `protobuf:"bytes,2,opt,name=workload_identity_provider,json=workloadIdentityProvider,proto3" json:"workload_identity_provider,omitempty"`
 	unknownFields            protoimpl.UnknownFields
 	sizeCache                protoimpl.SizeCache
 }
 
 func (x *GCPParams) Reset() {
 	*x = GCPParams{}
-	mi := &file_bifrost_proto_msgTypes[5]
+	mi := &file_bifrost_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -363,7 +716,7 @@ func (x *GCPParams) String() string {
 func (*GCPParams) ProtoMessage() {}
 
 func (x *GCPParams) ProtoReflect() protoreflect.Message {
-	mi := &file_bifrost_proto_msgTypes[5]
+	mi := &file_bifrost_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -376,19 +729,19 @@ func (x *GCPParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GCPParams.ProtoReflect.Descriptor instead.
 func (*GCPParams) Descriptor() ([]byte, []int) {
-	return file_bifrost_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *GCPParams) GetWorkloadIdentityProvider() string {
-	if x != nil {
-		return x.WorkloadIdentityProvider
-	}
-	return ""
+	return file_bifrost_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GCPParams) GetServiceAccountEmail() string {
 	if x != nil {
 		return x.ServiceAccountEmail
+	}
+	return ""
+}
+
+func (x *GCPParams) GetWorkloadIdentityProvider() string {
+	if x != nil {
+		return x.WorkloadIdentityProvider
 	}
 	return ""
 }
@@ -406,7 +759,7 @@ type GCPToken struct {
 
 func (x *GCPToken) Reset() {
 	*x = GCPToken{}
-	mi := &file_bifrost_proto_msgTypes[6]
+	mi := &file_bifrost_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -418,7 +771,7 @@ func (x *GCPToken) String() string {
 func (*GCPToken) ProtoMessage() {}
 
 func (x *GCPToken) ProtoReflect() protoreflect.Message {
-	mi := &file_bifrost_proto_msgTypes[6]
+	mi := &file_bifrost_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -431,7 +784,7 @@ func (x *GCPToken) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GCPToken.ProtoReflect.Descriptor instead.
 func (*GCPToken) Descriptor() ([]byte, []int) {
-	return file_bifrost_proto_rawDescGZIP(), []int{6}
+	return file_bifrost_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GCPToken) GetAccessToken() string {
@@ -482,18 +835,42 @@ const file_bifrost_proto_rawDesc = "" +
 	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x13\n" +
 	"\x11GetVersionRequest\".\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
-	"\aversion\x18\x01 \x01(\tR\aversion\"~\n" +
-	"\x0fGetTokenRequest\x12-\n" +
-	"\x12container_registry\x18\x01 \x01(\tR\x11containerRegistry\x12)\n" +
-	"\x03GCP\x18\x02 \x01(\v2\x15.bifrost.v1.GCPParamsH\x00R\x03GCPB\x11\n" +
-	"\x0fprovider_params\"\x92\x01\n" +
+	"\aversion\x18\x01 \x01(\tR\aversion\"\x8c\x02\n" +
+	"\x0fGetTokenRequest\x120\n" +
+	"\bprovider\x18\x01 \x01(\x0e2\x14.bifrost.v1.ProviderR\bprovider\x12-\n" +
+	"\x12container_registry\x18\x02 \x01(\tR\x11containerRegistry\x12)\n" +
+	"\x03aws\x18d \x01(\v2\x15.bifrost.v1.AWSParamsH\x00R\x03aws\x12/\n" +
+	"\x05azure\x18e \x01(\v2\x17.bifrost.v1.AzureParamsH\x00R\x05azure\x12)\n" +
+	"\x03gcp\x18f \x01(\v2\x15.bifrost.v1.GCPParamsH\x00R\x03gcpB\x11\n" +
+	"\x0fprovider_params\"\xf1\x01\n" +
 	"\x10GetTokenResponse\x12K\n" +
-	"\x0eregistry_login\x18\x01 \x01(\v2\".bifrost.v1.ContainerRegistryLoginH\x00R\rregistryLogin\x12(\n" +
-	"\x03GCP\x18\x02 \x01(\v2\x14.bifrost.v1.GCPTokenH\x00R\x03GCPB\a\n" +
-	"\x05token\"y\n" +
-	"\tGCPParams\x12:\n" +
-	"\x18workloadIdentityProvider\x18\x01 \x01(\tR\x18workloadIdentityProvider\x120\n" +
-	"\x13serviceAccountEmail\x18\x02 \x01(\tR\x13serviceAccountEmail\"\xc4\x01\n" +
+	"\x0eregistry_login\x18\x01 \x01(\v2\".bifrost.v1.ContainerRegistryLoginH\x00R\rregistryLogin\x12-\n" +
+	"\x03aws\x18d \x01(\v2\x19.bifrost.v1.AWSAssumeRoleH\x00R\x03aws\x12.\n" +
+	"\x05azure\x18e \x01(\v2\x16.bifrost.v1.AzureTokenH\x00R\x05azure\x12(\n" +
+	"\x03gcp\x18f \x01(\v2\x14.bifrost.v1.GCPTokenH\x00R\x03gcpB\a\n" +
+	"\x05token\"R\n" +
+	"\tAWSParams\x12\x19\n" +
+	"\brole_arn\x18\x01 \x01(\tR\aroleArn\x12*\n" +
+	"\x11role_session_name\x18\x02 \x01(\tR\x0froleSessionName\"\xc0\x01\n" +
+	"\rAWSAssumeRole\x12\"\n" +
+	"\raccess_key_id\x18\x01 \x01(\tR\vaccessKeyId\x12*\n" +
+	"\x11secret_access_key\x18\x02 \x01(\tR\x0fsecretAccessKey\x12#\n" +
+	"\rsession_token\x18\x03 \x01(\tR\fsessionToken\x12:\n" +
+	"\n" +
+	"expiration\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"expiration\"_\n" +
+	"\vAzureParams\x12\x1b\n" +
+	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12\x1b\n" +
+	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x16\n" +
+	"\x06scopes\x18\x03 \x03(\tR\x06scopes\"]\n" +
+	"\n" +
+	"AzureToken\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x129\n" +
+	"\n" +
+	"expires_on\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresOn\"}\n" +
+	"\tGCPParams\x122\n" +
+	"\x15service_account_email\x18\x01 \x01(\tR\x13serviceAccountEmail\x12<\n" +
+	"\x1aworkload_identity_provider\x18\x02 \x01(\tR\x18workloadIdentityProvider\"\xc4\x01\n" +
 	"\bGCPToken\x12!\n" +
 	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12\x1d\n" +
 	"\n" +
@@ -501,7 +878,11 @@ const file_bifrost_proto_rawDesc = "" +
 	"\rrefresh_token\x18\x03 \x01(\tR\frefreshToken\x122\n" +
 	"\x06expiry\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x06expiry\x12\x1d\n" +
 	"\n" +
-	"expires_in\x18\x05 \x01(\x03R\texpiresIn2\xc5\x01\n" +
+	"expires_in\x18\x05 \x01(\x03R\texpiresIn*'\n" +
+	"\bProvider\x12\a\n" +
+	"\x03aws\x10\x00\x12\t\n" +
+	"\x05azure\x10\x01\x12\a\n" +
+	"\x03gcp\x10\x022\xc5\x01\n" +
 	"\aBifrost\x12`\n" +
 	"\n" +
 	"GetVersion\x12\x1d.bifrost.v1.GetVersionRequest\x1a\x1e.bifrost.v1.GetVersionResponse\"\x13\x82\xd3\xe4\x93\x02\r\x12\v/v1/version\x12X\n" +
@@ -519,32 +900,45 @@ func file_bifrost_proto_rawDescGZIP() []byte {
 	return file_bifrost_proto_rawDescData
 }
 
-var file_bifrost_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_bifrost_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_bifrost_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_bifrost_proto_goTypes = []any{
-	(*ContainerRegistryLogin)(nil), // 0: bifrost.v1.ContainerRegistryLogin
-	(*GetVersionRequest)(nil),      // 1: bifrost.v1.GetVersionRequest
-	(*GetVersionResponse)(nil),     // 2: bifrost.v1.GetVersionResponse
-	(*GetTokenRequest)(nil),        // 3: bifrost.v1.GetTokenRequest
-	(*GetTokenResponse)(nil),       // 4: bifrost.v1.GetTokenResponse
-	(*GCPParams)(nil),              // 5: bifrost.v1.GCPParams
-	(*GCPToken)(nil),               // 6: bifrost.v1.GCPToken
-	(*timestamppb.Timestamp)(nil),  // 7: google.protobuf.Timestamp
+	(Provider)(0),                  // 0: bifrost.v1.Provider
+	(*ContainerRegistryLogin)(nil), // 1: bifrost.v1.ContainerRegistryLogin
+	(*GetVersionRequest)(nil),      // 2: bifrost.v1.GetVersionRequest
+	(*GetVersionResponse)(nil),     // 3: bifrost.v1.GetVersionResponse
+	(*GetTokenRequest)(nil),        // 4: bifrost.v1.GetTokenRequest
+	(*GetTokenResponse)(nil),       // 5: bifrost.v1.GetTokenResponse
+	(*AWSParams)(nil),              // 6: bifrost.v1.AWSParams
+	(*AWSAssumeRole)(nil),          // 7: bifrost.v1.AWSAssumeRole
+	(*AzureParams)(nil),            // 8: bifrost.v1.AzureParams
+	(*AzureToken)(nil),             // 9: bifrost.v1.AzureToken
+	(*GCPParams)(nil),              // 10: bifrost.v1.GCPParams
+	(*GCPToken)(nil),               // 11: bifrost.v1.GCPToken
+	(*timestamppb.Timestamp)(nil),  // 12: google.protobuf.Timestamp
 }
 var file_bifrost_proto_depIdxs = []int32{
-	7, // 0: bifrost.v1.ContainerRegistryLogin.expires_at:type_name -> google.protobuf.Timestamp
-	5, // 1: bifrost.v1.GetTokenRequest.GCP:type_name -> bifrost.v1.GCPParams
-	0, // 2: bifrost.v1.GetTokenResponse.registry_login:type_name -> bifrost.v1.ContainerRegistryLogin
-	6, // 3: bifrost.v1.GetTokenResponse.GCP:type_name -> bifrost.v1.GCPToken
-	7, // 4: bifrost.v1.GCPToken.expiry:type_name -> google.protobuf.Timestamp
-	1, // 5: bifrost.v1.Bifrost.GetVersion:input_type -> bifrost.v1.GetVersionRequest
-	3, // 6: bifrost.v1.Bifrost.GetToken:input_type -> bifrost.v1.GetTokenRequest
-	2, // 7: bifrost.v1.Bifrost.GetVersion:output_type -> bifrost.v1.GetVersionResponse
-	4, // 8: bifrost.v1.Bifrost.GetToken:output_type -> bifrost.v1.GetTokenResponse
-	7, // [7:9] is the sub-list for method output_type
-	5, // [5:7] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	12, // 0: bifrost.v1.ContainerRegistryLogin.expires_at:type_name -> google.protobuf.Timestamp
+	0,  // 1: bifrost.v1.GetTokenRequest.provider:type_name -> bifrost.v1.Provider
+	6,  // 2: bifrost.v1.GetTokenRequest.aws:type_name -> bifrost.v1.AWSParams
+	8,  // 3: bifrost.v1.GetTokenRequest.azure:type_name -> bifrost.v1.AzureParams
+	10, // 4: bifrost.v1.GetTokenRequest.gcp:type_name -> bifrost.v1.GCPParams
+	1,  // 5: bifrost.v1.GetTokenResponse.registry_login:type_name -> bifrost.v1.ContainerRegistryLogin
+	7,  // 6: bifrost.v1.GetTokenResponse.aws:type_name -> bifrost.v1.AWSAssumeRole
+	9,  // 7: bifrost.v1.GetTokenResponse.azure:type_name -> bifrost.v1.AzureToken
+	11, // 8: bifrost.v1.GetTokenResponse.gcp:type_name -> bifrost.v1.GCPToken
+	12, // 9: bifrost.v1.AWSAssumeRole.expiration:type_name -> google.protobuf.Timestamp
+	12, // 10: bifrost.v1.AzureToken.expires_on:type_name -> google.protobuf.Timestamp
+	12, // 11: bifrost.v1.GCPToken.expiry:type_name -> google.protobuf.Timestamp
+	2,  // 12: bifrost.v1.Bifrost.GetVersion:input_type -> bifrost.v1.GetVersionRequest
+	4,  // 13: bifrost.v1.Bifrost.GetToken:input_type -> bifrost.v1.GetTokenRequest
+	3,  // 14: bifrost.v1.Bifrost.GetVersion:output_type -> bifrost.v1.GetVersionResponse
+	5,  // 15: bifrost.v1.Bifrost.GetToken:output_type -> bifrost.v1.GetTokenResponse
+	14, // [14:16] is the sub-list for method output_type
+	12, // [12:14] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_bifrost_proto_init() }
@@ -553,24 +947,29 @@ func file_bifrost_proto_init() {
 		return
 	}
 	file_bifrost_proto_msgTypes[3].OneofWrappers = []any{
-		(*GetTokenRequest_GCP)(nil),
+		(*GetTokenRequest_Aws)(nil),
+		(*GetTokenRequest_Azure)(nil),
+		(*GetTokenRequest_Gcp)(nil),
 	}
 	file_bifrost_proto_msgTypes[4].OneofWrappers = []any{
 		(*GetTokenResponse_RegistryLogin)(nil),
-		(*GetTokenResponse_GCP)(nil),
+		(*GetTokenResponse_Aws)(nil),
+		(*GetTokenResponse_Azure)(nil),
+		(*GetTokenResponse_Gcp)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_bifrost_proto_rawDesc), len(file_bifrost_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   7,
+			NumEnums:      1,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_bifrost_proto_goTypes,
 		DependencyIndexes: file_bifrost_proto_depIdxs,
+		EnumInfos:         file_bifrost_proto_enumTypes,
 		MessageInfos:      file_bifrost_proto_msgTypes,
 	}.Build()
 	File_bifrost_proto = out.File

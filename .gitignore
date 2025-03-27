@@ -7,3 +7,4 @@ terraform.*
 *.tgz
 config.cue
 cov*.out
+!*.swagger.json

@@ -147,11 +147,11 @@ func (b *bifrostService) GetToken(ctx context.Context, req *bifröstpb.GetTokenR
 	// Detect provider and set provider-specific options.
 	var provider bifröst.Provider
 	providerLoggerData := logrus.Fields{}
-	switch params := req.GetProviderParams().(type) {
-	case *bifröstpb.GetTokenRequest_GCP:
-		opts, provider = getGCPOptionsAndProvider(params.GCP, opts, providerLoggerData)
+	switch providerName := req.GetProvider().String(); providerName {
+	case gcp.ProviderName:
+		opts, provider = getGCPOptionsAndProvider(req.GetGcp(), opts, providerLoggerData)
 	default:
-		return nil, status.Errorf(codes.InvalidArgument, "unsupported provider type: %T", params)
+		return nil, status.Errorf(codes.InvalidArgument, "unsupported provider: '%s'", providerName)
 	}
 	paramsLoggerData["provider"] = logrus.Fields{
 		"name":   provider.GetName(),

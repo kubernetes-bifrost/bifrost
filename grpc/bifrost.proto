@@ -43,6 +43,12 @@ service Bifrost {
 	}
 }
 
+enum Provider {
+	aws = 0;
+	azure = 1;
+	gcp = 2;
+}
+
 message ContainerRegistryLogin {
 	string username = 1;
 	string password = 2;
@@ -56,22 +62,51 @@ message GetVersionResponse {
 }
 
 message GetTokenRequest {
-	string container_registry = 1;
+	Provider provider = 1;
+	string container_registry = 2;
+
 	oneof provider_params {
-		GCPParams GCP = 2;
+		AWSParams aws = 100;
+		AzureParams azure = 101;
+		GCPParams gcp = 102;
 	}
 }
 
 message GetTokenResponse {
 	oneof token {
 		ContainerRegistryLogin registry_login = 1;
-		GCPToken GCP = 2;
+		AWSAssumeRole aws = 100;
+		AzureToken azure = 101;
+		GCPToken gcp = 102;
 	}
 }
 
+message AWSParams {
+	string role_arn = 1;
+	string role_session_name = 2;
+}
+
+message AWSAssumeRole {
+	string access_key_id = 1;
+	string secret_access_key = 2;
+	string session_token = 3;
+	google.protobuf.Timestamp expiration = 4;
+}
+
+message AzureParams {
+	string client_id = 1;
+	string tenant_id = 2;
+	repeated string scopes = 3;
+}
+
+message AzureToken {
+	string token = 1;
+	google.protobuf.Timestamp expires_on = 2;
+}
+
 message GCPParams {
-	string workloadIdentityProvider = 1;
-	string serviceAccountEmail = 2;
+	string service_account_email = 1;
+	string workload_identity_provider = 2;
 }
 
 message GCPToken {

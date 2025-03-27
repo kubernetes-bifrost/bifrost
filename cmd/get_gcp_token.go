@@ -170,9 +170,10 @@ func callGCPService(ctx context.Context) (any, error) {
 	}
 
 	resp, err := client.GetToken(ctx, &bifröstpb.GetTokenRequest{
+		Provider:          bifröstpb.Provider_gcp,
 		ContainerRegistry: getTokenCmdFlags.containerRegistry,
-		ProviderParams: &bifröstpb.GetTokenRequest_GCP{
-			GCP: &params,
+		ProviderParams: &bifröstpb.GetTokenRequest_Gcp{
+			Gcp: &params,
 		},
 	})
 
@@ -180,7 +181,7 @@ func callGCPService(ctx context.Context) (any, error) {
 		return nil, err
 	}
 
-	token := resp.GetGCP()
+	token := resp.GetGcp()
 	if token == nil {
 		return resp.GetToken(), nil
 	}
@@ -215,9 +216,9 @@ func getGCPOptionsAndProvider(params *bifröstpb.GCPParams, opts []bifröst.Opti
 	return opts, gcp.Provider{}
 }
 
-func getGCPResponseFromToken(t *gcp.Token) *bifröstpb.GetTokenResponse_GCP {
-	return &bifröstpb.GetTokenResponse_GCP{
-		GCP: &bifröstpb.GCPToken{
+func getGCPResponseFromToken(t *gcp.Token) *bifröstpb.GetTokenResponse_Gcp {
+	return &bifröstpb.GetTokenResponse_Gcp{
+		Gcp: &bifröstpb.GCPToken{
 			AccessToken:  t.AccessToken,
 			TokenType:    t.TokenType,
 			RefreshToken: t.RefreshToken,
