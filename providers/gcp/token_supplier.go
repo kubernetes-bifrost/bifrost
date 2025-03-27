@@ -20,9 +20,18 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package aws
+package gcp
 
-// ProviderName is the name of the provider.
-const ProviderName = "aws"
+import (
+	"context"
 
-type Provider struct{}
+	"golang.org/x/oauth2/google/externalaccount"
+)
+
+// TokenSupplier is used to feed fin-memory tokens to the externalaccount package.
+type TokenSupplier string
+
+// SubjectToken implements externalaccount.SubjectTokenSupplier.
+func (s TokenSupplier) SubjectToken(context.Context, externalaccount.SupplierOptions) (string, error) {
+	return string(s), nil
+}

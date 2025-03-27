@@ -75,6 +75,7 @@ message GetVersionResponse {
 
 message GetTokenRequest {
 	Provider provider = 1 [(google.api.field_behavior) = REQUIRED];
+
 	string container_registry = 2;
 
 	oneof provider_params {
@@ -87,6 +88,7 @@ message GetTokenRequest {
 message GetTokenResponse {
 	oneof token {
 		ContainerRegistryLogin registry_login = 1;
+
 		AWSToken aws = 100;
 		AzureToken azure = 101;
 		GCPToken gcp = 102;

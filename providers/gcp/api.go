@@ -20,43 +20,17 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package bifröst_test
+package gcp
 
-import (
-	"net/http"
-	"testing"
-	"time"
+import bifröst "github.com/kubernetes-bifrost/bifrost"
 
-	. "github.com/onsi/gomega"
+const (
+	// APIGroup is the API group for the gcp.bifrost-k8s.io API.
+	APIGroup = ProviderName + "." + bifröst.APIGroup
 
-	bifröst "github.com/kubernetes-bifrost/bifrost"
+	// ServiceAccountWorkloadIdentityProvider is the annotation key for the workload identity provider.
+	ServiceAccountWorkloadIdentityProvider = APIGroup + "/workloadIdentityProvider"
+
+	// ServiceAccountEmail is the GKE annotation key for the GCP service account email.
+	ServiceAccountEmail = "iam.gke.io/gcp-service-account"
 )
-
-func TestOptions_Apply(t *testing.T) {
-	g := NewWithT(t)
-
-	hc := http.Client{Timeout: 5}
-
-	var o bifröst.Options
-	o.Apply(bifröst.WithContainerRegistry("registry.example.com"))
-	o.Apply(bifröst.WithHTTPClient(hc))
-
-	g.Expect(o.GetContainerRegistry()).To(Equal("registry.example.com"))
-
-	httpClient := o.GetHTTPClient()
-	g.Expect(httpClient).NotTo(BeNil())
-	g.Expect(httpClient.Timeout).To(Equal(time.Duration(5)))
-}
-
-func TestOptions_ApplyProviderOptions(t *testing.T) {
-	g := NewWithT(t)
-
-	var o bifröst.Options
-	o.Apply(bifröst.WithProviderOptions(func(obj any) {
-		*obj.(*int) = 42
-	}))
-
-	var x int
-	o.ApplyProviderOptions(&x)
-	g.Expect(x).To(Equal(42))
-}

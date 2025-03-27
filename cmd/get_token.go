@@ -70,7 +70,7 @@ var getTokenCmdFlags struct {
 
 	outputFormatter   func(any) error
 	serviceAccountObj *corev1.ServiceAccount
-	proxyURL          *url.URL
+	httpClient        *http.Client
 	opts              []bifröst.Option
 	debugProxy        *http.Server
 	grpcConn          *grpc.ClientConn
@@ -86,7 +86,7 @@ func init() {
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.serviceAccount, "service-account", "s", "",
 		"A service account name for token exchange")
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.proxyURLString, "proxy-url", "p", "",
-		"An HTTP/S proxy URL for talking to the cloud provider Security Token Service. "+
+		"The URL of an HTTP/S proxy for interacting with the cloud provider Security Token Service. "+
 			fmt.Sprintf("Can also be specified via the %s environment variable. ", envProxyURL)+
 			"When set to 'debug' a debug proxy will be started")
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.containerRegistry, "container-registry", "c", "",
@@ -182,7 +182,9 @@ Expires At: %[3]s (%[4]s)
 			if err != nil {
 				return fmt.Errorf("failed to parse proxy URL: %w", err)
 			}
-			getTokenCmdFlags.proxyURL = proxyURL
+			transport := http.DefaultTransport.(*http.Transport).Clone()
+			transport.Proxy = http.ProxyURL(proxyURL)
+			getTokenCmdFlags.httpClient = &http.Client{Transport: transport}
 		}
 
 		// Parse service account reference and create token if calling the gRPC endpoint.
@@ -244,8 +246,8 @@ Expires At: %[3]s (%[4]s)
 				}
 			}
 		}
-		if getTokenCmdFlags.proxyURL != nil {
-			opts = append(opts, bifröst.WithProxyURL(*getTokenCmdFlags.proxyURL))
+		if getTokenCmdFlags.httpClient != nil {
+			opts = append(opts, bifröst.WithHTTPClient(*getTokenCmdFlags.httpClient))
 		}
 		if getTokenCmdFlags.containerRegistry != "" {
 			opts = append(opts, bifröst.WithContainerRegistry(getTokenCmdFlags.containerRegistry))

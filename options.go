@@ -24,8 +24,6 @@ package bifröst
 
 import (
 	"net/http"
-	"net/url"
-	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -39,6 +37,7 @@ type Options struct {
 	httpClient         *http.Client
 	containerRegistry  string
 	preferDirectAccess bool
+	extraCacheKeyParts []string
 	providerOptions    []ProviderOption
 }
 
@@ -50,9 +49,10 @@ type Option func(*Options)
 type ProviderOption func(any)
 
 // WithCache sets the cache for getting a token.
-func WithCache(cache Cache) Option {
+func WithCache(cache Cache, extraKeyParts ...string) Option {
 	return func(o *Options) {
 		o.cache = cache
+		o.extraCacheKeyParts = extraKeyParts
 	}
 }
 
@@ -87,30 +87,21 @@ func WithIdentityProvider(provider IdentityProvider) Option {
 	}
 }
 
-// WithProxyURL creates an HTTP client in the options with the provided
-// proxy URL. This client is used for talking to the Security Token
-// Service (STS) of the cloud provider.
-func WithProxyURL(proxyURL url.URL) Option {
-	proxy := func(r *http.Request) (*url.URL, error) {
-		if proxyURL == (url.URL{}) {
-			return nil, nil
-		}
-		if r != nil {
-			h := r.URL.Hostname()
-			if strings.Contains(h, "169.254") || // All providers use link-local addresses for metadata services.
-				strings.Contains(h, "metadata.google.internal") { // Only GCP also uses a DNS name.
-				return nil, nil
-			}
-		}
-		return &proxyURL, nil
-	}
-
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = proxy
-	httpClient := &http.Client{Transport: transport}
-
+// WithHTTPClient sets the HTTP client for getting the token.
+// When setting a custom HTTP client and also using a cache,
+// make sure to think about what in this HTTP client could
+// influence how tokens are issued and pass extra cache key
+// parts to the cache option reflecting that behavior. This
+// is crucial for avoiding returning wrong tokens from the
+// cache. The consequences of returning a wrong token from
+// the cache are: 1) a direct impact on the application
+// permissions; and 2) the possibility of malicious actors
+// stealing tokens they should not have access to.
+// When a custom HTTP client is specified, the proxy set on
+// service account annotations is ignored.
+func WithHTTPClient(client http.Client) Option {
 	return func(o *Options) {
-		o.httpClient = httpClient
+		o.httpClient = &client
 	}
 }
 

@@ -46,13 +46,13 @@ type Provider interface {
 
 	// GetAudience returns the audience identity tokens should have for being
 	// accepted by the cloud provider and exchanged for access tokens.
-	GetAudience(ctx context.Context, serviceAccount *corev1.ServiceAccount,
+	GetAudience(ctx context.Context, serviceAccount corev1.ServiceAccount,
 		opts ...Option) (string, error)
 
 	// NewAccessToken takes a service account and an identity token and returns a token
 	// that can be used to authenticate with the cloud provider.
 	NewAccessToken(ctx context.Context, identityToken string,
-		serviceAccount *corev1.ServiceAccount, opts ...Option) (Token, error)
+		serviceAccount corev1.ServiceAccount, opts ...Option) (Token, error)
 
 	// NewRegistryLogin takes a container registry host and a Token created with
 	// either NewDefaultAccessToken() or NewAccessToken() and returns a token
@@ -69,6 +69,6 @@ type IdentityProvider interface {
 	// an audience and returns an identity token that attests to the identity
 	// and targets the audience.
 	NewIdentityToken(ctx context.Context, accessToken Token,
-		serviceAccount *corev1.ServiceAccount,
+		serviceAccount corev1.ServiceAccount,
 		audience string, opts ...Option) (string, error)
 }

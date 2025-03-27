@@ -24,25 +24,32 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/aws/smithy-go"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	authnv1 "k8s.io/api/authentication/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
 	bifröstpb "github.com/kubernetes-bifrost/bifrost/grpc/go"
+	"github.com/kubernetes-bifrost/bifrost/providers/aws"
 	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 )
 
@@ -62,7 +69,8 @@ type bifrostService struct {
 
 func registerBifrostService(ctx context.Context,
 	client client.Client, cache bifröst.Cache, rootOpts []bifröst.Option,
-	grpcServer *grpc.Server, gatewayMux *runtime.ServeMux, endpoint string) error {
+	server, internalServer *grpc.Server,
+	gatewayMux *runtime.ServeMux, endpoint string, gatewayCreds grpc.DialOption) error {
 
 	b := &bifrostService{
 		client:   client,
@@ -78,19 +86,19 @@ func registerBifrostService(ctx context.Context,
 			Namespace: metricsNamespace,
 			Subsystem: tokenCacheMetricsSubsystem,
 			Name:      "request_latency_seconds",
-		}, []string{"name", "namespace", "provider", "status"})
+		}, []string{"name", "namespace", "provider", "token_type", "status"})
 		b.tokenCacheEvents = promauto.NewCounterVec(prometheus.CounterOpts{
 			Help:      "Token cache event count per service account and gRPC method.",
 			Namespace: metricsNamespace,
 			Subsystem: tokenCacheMetricsSubsystem,
 			Name:      "events_total",
-		}, []string{"name", "namespace", "provider", "event"})
+		}, []string{"name", "namespace", "provider", "token_type", "event"})
 		b.tokenCacheDuplicates = promauto.NewCounterVec(prometheus.CounterOpts{
 			Help:      "Number of token requests that overlapped with in-flight requests.",
 			Namespace: metricsNamespace,
 			Subsystem: tokenCacheMetricsSubsystem,
 			Name:      "duplicates_total",
-		}, []string{"name", "namespace", "provider"})
+		}, []string{"name", "namespace", "provider", "token_type"})
 		b.tokenCacheEvictions = promauto.NewCounter(prometheus.CounterOpts{
 			Help:      "Number of token cache evictions.",
 			Namespace: metricsNamespace,
@@ -106,8 +114,9 @@ func registerBifrostService(ctx context.Context,
 	}
 
 	// Register the gRPC service and gateway.
-	bifröstpb.RegisterBifrostServer(grpcServer, b)
-	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	bifröstpb.RegisterBifrostServer(server, b)
+	bifröstpb.RegisterBifrostServer(internalServer, b)
+	dialOpts := []grpc.DialOption{gatewayCreds}
 	if err := bifröstpb.RegisterBifrostHandlerFromEndpoint(ctx, gatewayMux, endpoint, dialOpts); err != nil {
 		return fmt.Errorf("failed to register bifrost gRPC service gateway: %w", err)
 	}
@@ -138,8 +147,10 @@ func (b *bifrostService) GetToken(ctx context.Context, req *bifröstpb.GetTokenR
 	})
 
 	// Set container registry if provided.
+	tokenType := "access"
 	paramsLoggerData := logrus.Fields{}
 	if cr := req.GetContainerRegistry(); cr != "" {
+		tokenType = "registry"
 		opts = append(opts, bifröst.WithContainerRegistry(cr))
 		paramsLoggerData["containerRegistry"] = cr
 	}
@@ -148,6 +159,8 @@ func (b *bifrostService) GetToken(ctx context.Context, req *bifröstpb.GetTokenR
 	var provider bifröst.Provider
 	providerLoggerData := logrus.Fields{}
 	switch providerName := req.GetProvider().String(); providerName {
+	case aws.ProviderName:
+		opts, provider = getAWSOptionsAndProvider(req.GetAws(), opts, providerLoggerData)
 	case gcp.ProviderName:
 		opts, provider = getGCPOptionsAndProvider(req.GetGcp(), opts, providerLoggerData)
 	default:
@@ -170,6 +183,7 @@ func (b *bifrostService) GetToken(ctx context.Context, req *bifröstpb.GetTokenR
 			items:             b.tokenCacheItems,
 			serviceAccountRef: serviceAccountRef,
 			providerName:      provider.GetName(),
+			tokenType:         tokenType,
 		}
 		opts = append(opts, bifröst.WithCache(b.cache.WithObserver(observer)))
 	}
@@ -196,6 +210,8 @@ func (b *bifrostService) GetToken(ctx context.Context, req *bifröstpb.GetTokenR
 				ExpiresAt: timestamppb.New(t.ExpiresAt),
 			},
 		}
+	case *aws.Token:
+		resp.Token = getAWSResponseFromToken(t)
 	case *gcp.Token:
 		resp.Token = getGCPResponseFromToken(t)
 	default:
@@ -203,6 +219,8 @@ func (b *bifrostService) GetToken(ctx context.Context, req *bifröstpb.GetTokenR
 	}
 	return &resp, nil
 }
+
+var serviceAccountRefRegex = regexp.MustCompile(`^system:serviceaccount:([^:]+):([^:]+)$`)
 
 func (b *bifrostService) extractServiceAccountRef(ctx context.Context) (*client.ObjectKey, error) {
 	// Extract service account token from metadata.
@@ -220,22 +238,19 @@ func (b *bifrostService) extractServiceAccountRef(ctx context.Context) (*client.
 		},
 	}
 	if err := b.client.Create(ctx, tokenReview); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to validate token: %v", err)
+		return nil, wrapf(codes.Internal, err, "failed to validate service account token")
 	}
 	if !tokenReview.Status.Authenticated {
-		return nil, status.Error(codes.Unauthenticated, "token is not authenticated")
+		return nil, status.Errorf(codes.Unauthenticated, "service account token is not authenticated")
 	}
 	user := tokenReview.Status.User.Username
-	if !strings.HasPrefix(user, "system:serviceaccount:") {
-		return nil, status.Errorf(codes.PermissionDenied, "user is not a service account: %s", user)
-	}
-	s := strings.Split(user, ":")
-	if len(s) != 4 {
-		return nil, status.Errorf(codes.PermissionDenied, "invalid service account: %s", user)
+	match := serviceAccountRefRegex.FindStringSubmatch(user)
+	if match == nil {
+		return nil, status.Errorf(codes.PermissionDenied, "user from token is not a service account: %s", user)
 	}
 	return &client.ObjectKey{
-		Namespace: s[2],
-		Name:      s[3],
+		Namespace: match[1],
+		Name:      match[2],
 	}, nil
 }
 
@@ -248,23 +263,24 @@ type tokenCacheObserver struct {
 	items             prometheus.Gauge
 	serviceAccountRef *client.ObjectKey
 	providerName      string
+	tokenType         string
 }
 
 func (t *tokenCacheObserver) OnCacheHit() {
 	t.events.WithLabelValues(t.serviceAccountRef.Name,
-		t.serviceAccountRef.Namespace, t.providerName, "hit").Inc()
+		t.serviceAccountRef.Namespace, t.providerName, t.tokenType, "hit").Inc()
 }
 
 func (t *tokenCacheObserver) OnCacheMiss() {
 	t.events.WithLabelValues(t.serviceAccountRef.Name,
-		t.serviceAccountRef.Namespace, t.providerName, "miss").Inc()
+		t.serviceAccountRef.Namespace, t.providerName, t.tokenType, "miss").Inc()
 }
 
 func (t *tokenCacheObserver) OnTokenIssued(latency time.Duration) {
 	t.logger.Info("token issued")
 	t.items.Inc()
 	t.latencies.WithLabelValues(t.serviceAccountRef.Name,
-		t.serviceAccountRef.Namespace, t.providerName, "success").
+		t.serviceAccountRef.Namespace, t.providerName, t.tokenType, "success").
 		Observe(latency.Seconds())
 }
 
@@ -279,11 +295,124 @@ func (t *tokenCacheObserver) OnTokenExpired() {
 
 func (t *tokenCacheObserver) OnFailedRequest(latency time.Duration) {
 	t.latencies.WithLabelValues(t.serviceAccountRef.Name,
-		t.serviceAccountRef.Namespace, t.providerName, "failure").
+		t.serviceAccountRef.Namespace, t.providerName, t.tokenType, "failure").
 		Observe(latency.Seconds())
 }
 
 func (t *tokenCacheObserver) OnDuplicateRequest() {
 	t.duplicates.WithLabelValues(t.serviceAccountRef.Name,
-		t.serviceAccountRef.Namespace, t.providerName).Inc()
+		t.serviceAccountRef.Namespace, t.providerName, t.tokenType).Inc()
+}
+
+type wrappedStatusError struct {
+	code codes.Code
+	msg  string
+	err  error
+}
+
+func (e *wrappedStatusError) Error() string {
+	return fmt.Sprintf("status error (%d - %s): %s: %v", e.code, e.code.String(), e.msg, e.err)
+}
+
+func wrapf(code codes.Code, err error, format string, args ...any) error {
+	return &wrappedStatusError{
+		code: code,
+		msg:  fmt.Sprintf(format, args...),
+		err:  err,
+	}
+}
+
+func handleServiceError(ctx context.Context, err error) (statusText string, errLogger logrus.FieldLogger, resErr error) {
+	if err == nil {
+		return codes.OK.String(), nil, nil
+	}
+
+	// Compute status code and message.
+	statusCode := codes.Internal
+	msg := err.Error()
+	if s, ok := status.FromError(err); ok && s != nil {
+		statusCode = s.Code()
+		msg = s.Message()
+	} else if wErr := (*wrappedStatusError)(nil); errors.As(err, &wErr) {
+		statusCode = wErr.code
+		msg = wErr.msg
+		err = wErr.err
+	}
+
+	// Set return values.
+	l := *fromContext(ctx)
+	statusText = statusCode.String()
+	errLogger = l.WithField("error", msg).WithField("status", statusText)
+	resErr = err
+
+	// Get Kubernetes API errors.
+	var kErr *apierrors.StatusError
+	errors.As(err, &kErr)
+
+	// Get AWS API errors.
+	var awsErr *smithy.OperationError
+	errors.As(err, &awsErr)
+
+	// Get Google API errors.
+	var gErr *googleapi.Error
+	errors.As(err, &gErr)
+
+	// Detect error type and recast details to generic object.
+	var refinedStatusText string
+	var errType string
+	var b []byte
+	switch {
+	case kErr != nil:
+		errType = "kubernetes"
+		var err error
+		b, err = json.Marshal(kErr.ErrStatus)
+		if err != nil {
+			l.WithError(err).Error("failed to marshal kubernetes error details")
+			return
+		}
+	case awsErr != nil:
+		errType = aws.ProviderName
+		b, refinedStatusText, msg = recastAWSErrorDetails(awsErr, msg)
+	case gErr != nil:
+		errType = gcp.ProviderName
+		b, refinedStatusText = recastGCPErrorDetails(gErr)
+	case strings.Contains(msg, oauthGoogle):
+		errType = gcp.ProviderName
+		b, refinedStatusText, msg = recastGCPOAuthErrorDetails(msg)
+	default:
+		return
+	}
+	if r := refinedStatusText; r != "" {
+		statusText = r
+		errLogger = errLogger.WithField("status", r)
+	}
+	var details any
+	if err := json.Unmarshal(b, &details); err != nil {
+		l.WithError(err).Error("failed to unmarshal error details")
+		return
+	}
+
+	// Post-process details.
+	switch errType {
+	case aws.ProviderName:
+		details = postProcessAWSErrorDetails(details)
+	case gcp.ProviderName:
+		details = postProcessGCPErrorDetails(details)
+	}
+
+	// Rebuild logger and error with details.
+	errLogger = errLogger.WithField("error", map[string]any{errType: details, "msg": msg})
+	pbDetails, err := structpb.NewStruct(map[string]any{errType: details})
+	if err != nil {
+		l.WithError(err).Error("failed to convert error details to protobuf struct")
+		return
+	}
+	s, err := status.New(statusCode, msg).WithDetails(pbDetails)
+	if err != nil {
+		l.WithError(err).Error("failed to create protobuf status with details")
+		return
+	}
+	resErr = s.Err()
+
+	return
 }

@@ -37,6 +37,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
+	"google.golang.org/api/googleapi"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
@@ -61,7 +63,7 @@ func init() {
 var getGCPTokenCmd = &cobra.Command{
 	Use:   gcp.ProviderName,
 	Short: "Get a token for accessing resources on GCP.",
-	RunE: func(cmd *cobra.Command, _ []string) error {
+	RunE: func(*cobra.Command, []string) error {
 		ctx := rootCmdFlags.ctx
 
 		if getTokenCmdFlags.printProgressInfo {
@@ -248,6 +250,50 @@ func getGCPResponseFromToken(t *gcp.Token) *bifröstpb.GetTokenResponse_Gcp {
 			ExpiresIn:    t.ExpiresIn,
 		},
 	}
+}
+
+func recastGCPErrorDetails(err *googleapi.Error) (b []byte, statusText string) {
+	b = []byte(err.Body)
+	if 400 <= err.Code && err.Code < 500 {
+		statusText = codes.PermissionDenied.String()
+	}
+	return
+}
+
+const oauthGoogle = "oauth2/google: status code "
+
+func recastGCPOAuthErrorDetails(errMsg string) (b []byte, statusText, msg string) {
+	idx := strings.Index(errMsg, oauthGoogle)
+	strErr := errMsg[idx+len(oauthGoogle):]
+	if idx := strings.Index(strErr, ":"); idx >= 0 {
+		b = []byte(strErr[idx+2:])
+		var httpStatus int
+		fmt.Sscan(strErr[:idx], &httpStatus)
+		if 400 <= httpStatus && httpStatus < 500 {
+			statusText = codes.PermissionDenied.String()
+		}
+	}
+	msg = strings.TrimSuffix(errMsg[:idx], ": ")
+	return
+}
+
+func postProcessGCPErrorDetails(details any) any {
+	if m, ok := details.(map[string]any); ok {
+		if e := m["error"]; e != nil {
+			if m, ok := e.(map[string]any); ok {
+				if d := m["details"]; d != nil {
+					if s, ok := d.([]any); ok && len(s) > 0 {
+						if len(s) == 1 {
+							details = s[0]
+						} else {
+							details = s
+						}
+					}
+				}
+			}
+		}
+	}
+	return details
 }
 
 // ===================

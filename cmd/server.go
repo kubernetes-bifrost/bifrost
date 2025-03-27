@@ -24,9 +24,13 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
 	_ "embed"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
@@ -47,15 +51,16 @@ import (
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protojson"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
+	"github.com/kubernetes-bifrost/bifrost/providers/aws"
 	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 )
 
@@ -74,10 +79,14 @@ var serverCmdFlags struct {
 	tlsCertFile                        string
 	tlsKeyFile                         string
 	disableTLS                         bool
+	proxyURL                           string
 	disableProxy                       bool
 	objectCacheSyncPeriod              time.Duration
 	tokenCacheMaxSize                  int
 	tokenCacheMaxDuration              time.Duration
+	awsSTSRegion                       string
+	awsSTSEndpoint                     string
+	awsDisableSTSRegionalEndpoints     bool
 	gcpDefaultWorkloadIdentityProvider string
 }
 
@@ -87,10 +96,14 @@ func serverCmdFlagsForLogger() logrus.Fields {
 		"tlsCertFile":                        serverCmdFlags.tlsCertFile,
 		"tlsKeyFile":                         serverCmdFlags.tlsKeyFile,
 		"disableTLS":                         serverCmdFlags.disableTLS,
+		"proxyURL":                           serverCmdFlags.proxyURL,
 		"disableProxy":                       serverCmdFlags.disableProxy,
 		"objectCacheSyncPeriod":              serverCmdFlags.objectCacheSyncPeriod.String(),
 		"tokenCacheMaxSize":                  serverCmdFlags.tokenCacheMaxSize,
 		"tokenCacheMaxDuration":              serverCmdFlags.tokenCacheMaxDuration.String(),
+		"awsSTSRegion":                       serverCmdFlags.awsSTSRegion,
+		"awsSTSEndpoint":                     serverCmdFlags.awsSTSEndpoint,
+		"awsDisableSTSRegionalEndpoints":     serverCmdFlags.awsDisableSTSRegionalEndpoints,
 		"gcpDefaultWorkloadIdentityProvider": serverCmdFlags.gcpDefaultWorkloadIdentityProvider,
 	}
 }
@@ -106,14 +119,23 @@ func init() {
 		"Path to the TLS key file")
 	serverCmd.Flags().BoolVar(&serverCmdFlags.disableTLS, "disable-tls", false,
 		"Disable TLS")
+	serverCmd.Flags().StringVar(&serverCmdFlags.proxyURL, "proxy-url", "",
+		"The URL of an HTTP/S proxy for interacting with the Security Token Services of cloud providers. "+
+			fmt.Sprintf("Can also be specified via the %s environment variable", envProxyURL))
 	serverCmd.Flags().BoolVar(&serverCmdFlags.disableProxy, "disable-proxy", false,
-		"Disable the use of HTTP/S proxies for talking to the Security Token Service of cloud providers")
+		"Disable the use of HTTP/S proxies when interacting with the Security Token Service of cloud providers")
 	serverCmd.Flags().DurationVar(&serverCmdFlags.objectCacheSyncPeriod, "object-cache-sync-period", 10*time.Minute,
 		"The period with which the Kubernetes object cache is synced. Minimum of 10m and maximum of 1h")
 	serverCmd.Flags().IntVar(&serverCmdFlags.tokenCacheMaxSize, "token-cache-max-size", 1000,
 		"Maximum number of tokens to cache. Set to zero to disable caching tokens")
 	serverCmd.Flags().DurationVar(&serverCmdFlags.tokenCacheMaxDuration, "token-cache-max-duration", time.Hour,
 		"Maximum duration to cache tokens")
+	serverCmd.Flags().StringVar(&serverCmdFlags.awsSTSRegion, "aws-sts-region", "",
+		"Region to use for the AWS STS service")
+	serverCmd.Flags().StringVar(&serverCmdFlags.awsSTSEndpoint, "aws-sts-endpoint", "",
+		"Endpoint to use for the AWS STS service")
+	serverCmd.Flags().BoolVar(&serverCmdFlags.awsDisableSTSRegionalEndpoints, "aws-disable-sts-regional-endpoints", false,
+		"Disable the use of regional AWS STS endpoints")
 	serverCmd.Flags().StringVar(&serverCmdFlags.gcpDefaultWorkloadIdentityProvider, "gcp-default-workload-identity-provider", "",
 		"Default GCP workload identity provider to use for issuing tokens")
 }
@@ -137,6 +159,12 @@ spec.internalTrafficPolicy set to Local to direct traffic to the
 server only from pods running on the same node.
 `,
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		// Get context and logger.
+		ctx := rootCmdFlags.ctx
+		logger := *fromContext(ctx)
+		httpLogger := newHTTPLogger(logger)
+		promLogger := newPromLogger(logger)
+
 		// Replace the version in the swagger JSON with the build version.
 		var swaggerJSON []byte
 		{
@@ -152,12 +180,6 @@ server only from pods running on the same node.
 			swaggerJSON = b
 		}
 
-		// Get context and logger.
-		ctx := rootCmdFlags.ctx
-		logger := *fromContext(ctx)
-		httpLogger := newHTTPLogger(logger)
-		promLogger := newPromLogger(logger)
-
 		// Validate TLS settings.
 		if !serverCmdFlags.disableTLS {
 			if _, err := tls.LoadX509KeyPair(serverCmdFlags.tlsCertFile, serverCmdFlags.tlsKeyFile); err != nil {
@@ -165,18 +187,66 @@ server only from pods running on the same node.
 			}
 		}
 
+		// Start listeners.
+		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", serverCmdFlags.port))
+		if err != nil {
+			return fmt.Errorf("failed to listen on port %d: %w", serverCmdFlags.port, err)
+		}
+		defer listener.Close()
+		internalListener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return fmt.Errorf("failed to listen on a random internal port for gRPC gateway requests: %w", err)
+		}
+		defer internalListener.Close()
+		internalAddr := internalListener.Addr().String()
+
+		// Create Kubernetes client.
+		logger.Info("starting kubernetes cache")
+		kubeClient, err := newServerKubeClient(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create kubernetes client: %w", err)
+		}
+		logger.Info("kubernetes cache started")
+
+		// Create token cache if enabled.
+		var cache bifröst.Cache
+		if serverCmdFlags.tokenCacheMaxSize > 0 {
+			cache = bifröst.NewCache(serverCmdFlags.tokenCacheMaxSize,
+				bifröst.WithMaxDuration(serverCmdFlags.tokenCacheMaxDuration))
+		}
+
 		// Build bifröst options.
 		var opts []bifröst.Option
 
 		// Configure HTTP/S proxy settings.
 		if serverCmdFlags.disableProxy {
-			opts = append(opts, bifröst.WithProxyURL(url.URL{}))
-		} else if env := os.Getenv(envProxyURL); env != "" {
-			proxyURL, err := url.Parse(env)
-			if err != nil {
-				return fmt.Errorf("failed to parse proxy URL: %w", err)
+			opts = append(opts, bifröst.WithHTTPClient(http.Client{}))
+		} else {
+			proxyURL := serverCmdFlags.proxyURL
+			if proxyURL == "" {
+				proxyURL = os.Getenv(envProxyURL)
 			}
-			opts = append(opts, bifröst.WithProxyURL(*proxyURL))
+			if proxyURL != "" {
+				proxyURL, err := url.Parse(proxyURL)
+				if err != nil {
+					return fmt.Errorf("failed to parse proxy URL: %w", err)
+				}
+				transport := http.DefaultTransport.(*http.Transport).Clone()
+				transport.Proxy = http.ProxyURL(proxyURL)
+				httpClient := http.Client{Transport: transport}
+				opts = append(opts, bifröst.WithHTTPClient(httpClient))
+			}
+		}
+
+		// Set AWS options.
+		if serverCmdFlags.awsSTSRegion != "" {
+			opts = append(opts, bifröst.WithProviderOptions(aws.WithSTSRegion(serverCmdFlags.awsSTSRegion)))
+		}
+		if serverCmdFlags.awsSTSEndpoint != "" {
+			opts = append(opts, bifröst.WithProviderOptions(aws.WithSTSEndpoint(serverCmdFlags.awsSTSEndpoint)))
+		}
+		if serverCmdFlags.awsDisableSTSRegionalEndpoints {
+			opts = append(opts, bifröst.WithProviderOptions(aws.WithDisableSTSRegionalEndpoints()))
 		}
 
 		// Set default GCP workload identity provider as default audience if provided.
@@ -198,50 +268,27 @@ server only from pods running on the same node.
 			}
 		}
 
-		// Create Kubernetes client.
-		logger.Info("starting kubernetes cache")
-		kubeClient, err := newServerKubeClient(ctx)
+		// Create transport credentials for internal gRPC server for gRPC gateway.
+		internalServerCreds, gatewayCreds, err := newInternalTransportCreds()
 		if err != nil {
-			return fmt.Errorf("failed to create kubernetes client: %w", err)
+			return fmt.Errorf("failed to create transport credentials for internal gRPC server for gRPC gateway: %w", err)
 		}
-		logger.Info("kubernetes cache started")
-
-		// Create metrics.
-		latencySecs := promauto.NewSummaryVec(prometheus.SummaryOpts{
-			Help:      "gRPC server request latency in seconds.",
-			Namespace: metricsNamespace,
-			Name:      "request_latency_seconds",
-		}, []string{"method", "status"})
-
-		// Create token cache if enabled.
-		var cache bifröst.Cache
-		if serverCmdFlags.tokenCacheMaxSize > 0 {
-			cache = bifröst.NewCache(serverCmdFlags.tokenCacheMaxSize,
-				bifröst.WithMaxDuration(serverCmdFlags.tokenCacheMaxDuration))
-		}
-
-		// Start listeners.
-		lis, err := net.Listen("tcp", fmt.Sprintf(":%d", serverCmdFlags.port))
-		if err != nil {
-			return fmt.Errorf("failed to listen on port %d: %w", serverCmdFlags.port, err)
-		}
-		defer lis.Close()
-		localLis, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			return fmt.Errorf("failed to listen on a random local port for gRPC gateway requests: %w", err)
-		}
-		defer localLis.Close()
-		localAddr := localLis.Addr().String()
 
 		// Configure gRPC service and gateway.
-		observabilityInterceptor := newServerObservabilityInterceptor(localAddr, latencySecs, logger)
-		serviceHandler := grpc.NewServer(grpc.UnaryInterceptor(observabilityInterceptor))
+		observabilityInterceptor := newServerObservabilityInterceptor(logger)
+		remoteAddrInterceptor := newServerRemoteAddrInterceptor(internalAddr)
+		interceptors := []grpc.UnaryServerInterceptor{observabilityInterceptor, remoteAddrInterceptor}
+		interceptorChain := grpc.ChainUnaryInterceptor(interceptors...)
+		serviceHandler := grpc.NewServer(interceptorChain)
+		internalServer := grpc.NewServer(interceptorChain, internalServerCreds)
 		gatewayOpts := []runtime.ServeMuxOption{
 			runtime.WithIncomingHeaderMatcher(gatewayHeaderMatcher),
 			runtime.WithMetadata(gatewayMetadata),
 		}
 		gatewayHandler := runtime.NewServeMux(gatewayOpts...)
-		err = registerBifrostService(ctx, kubeClient, cache, opts, serviceHandler, gatewayHandler, localAddr)
+		err = registerBifrostService(ctx, kubeClient, cache, opts,
+			serviceHandler, internalServer,
+			gatewayHandler, internalAddr, gatewayCreds)
 		if err != nil {
 			return err
 		}
@@ -281,26 +328,21 @@ server only from pods running on the same node.
 			Handler:  h2c.NewHandler(handler, &http2.Server{}),
 			ErrorLog: httpLogger,
 		}
-		localServer := &http.Server{
-			Addr:     localAddr,
-			Handler:  h2c.NewHandler(serviceHandler, &http2.Server{}),
-			ErrorLog: httpLogger,
-		}
 		logger.
-			WithField("rootFlags", rootCmdFlags).
-			WithField("serverFlags", serverCmdFlagsForLogger()).
+			WithField("rootCmdFlags", rootCmdFlags).
+			WithField("serverCmdFlags", serverCmdFlagsForLogger()).
 			Info("server started")
 		go func() {
-			if err := localServer.Serve(localLis); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				logger.WithError(err).Fatal("local server failed")
+			if err := internalServer.Serve(internalListener); err != nil {
+				logger.WithError(err).Fatal("internal server failed")
 			}
 		}()
 		go func() {
 			var err error
 			if serverCmdFlags.disableTLS {
-				err = server.Serve(lis)
+				err = server.Serve(listener)
 			} else {
-				err = server.ServeTLS(lis, serverCmdFlags.tlsCertFile, serverCmdFlags.tlsKeyFile)
+				err = server.ServeTLS(listener, serverCmdFlags.tlsCertFile, serverCmdFlags.tlsKeyFile)
 			}
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				logger.WithError(err).Fatal("server failed")
@@ -315,15 +357,14 @@ server only from pods running on the same node.
 		if err := server.Shutdown(ctx); err != nil {
 			return fmt.Errorf("failed to shutdown server: %w", err)
 		}
-		if err := localServer.Shutdown(ctx); err != nil {
-			return fmt.Errorf("failed to shutdown local server: %w", err)
-		}
+		internalServer.GracefulStop()
 
 		return nil
 	},
 }
 
 func newServerKubeClient(ctx context.Context) (client.Client, error) {
+	// Validate sync period.
 	syncPeriod := serverCmdFlags.objectCacheSyncPeriod
 	if syncPeriod < 10*time.Minute {
 		return nil, fmt.Errorf("cache sync period must be at least 10m")
@@ -331,6 +372,8 @@ func newServerKubeClient(ctx context.Context) (client.Client, error) {
 	if syncPeriod > time.Hour {
 		return nil, fmt.Errorf("cache sync period must be at most 1h")
 	}
+
+	// Start cache and wait for it to sync.
 	cache, err := cache.New(rootCmdFlags.kubeRESTConfig, cache.Options{
 		SyncPeriod: &syncPeriod,
 	})
@@ -346,6 +389,9 @@ func newServerKubeClient(ctx context.Context) (client.Client, error) {
 	if !cache.WaitForCacheSync(ctx) {
 		return nil, fmt.Errorf("failed to sync kubernetes cache")
 	}
+
+	// List service accounts and secrets to ensure controller-runtime
+	// will create an informer for them.
 	var serviceAccounts corev1.ServiceAccountList
 	if err := cache.List(ctx, &serviceAccounts); err != nil {
 		return nil, fmt.Errorf("failed to list service accounts: %w", err)
@@ -354,111 +400,139 @@ func newServerKubeClient(ctx context.Context) (client.Client, error) {
 	if err := cache.List(ctx, &secrets); err != nil {
 		return nil, fmt.Errorf("failed to list secrets: %w", err)
 	}
+
+	// Create client with cache.
 	return client.New(rootCmdFlags.kubeRESTConfig, client.Options{
 		Cache: &client.CacheOptions{Reader: cache},
 	})
 }
 
-func newServerObservabilityInterceptor(localAddr string, latencySecs *prometheus.SummaryVec,
-	logger logrus.FieldLogger) grpc.UnaryServerInterceptor {
+func newInternalTransportCreds() (grpc.ServerOption, grpc.DialOption, error) {
+	// Genereate a new RSA private key.
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate RSA key for TLS: %w", err)
+	}
+	keyDER := x509.MarshalPKCS1PrivateKey(key)
+
+	// Generate a self-signed certificate with the private key.
+	now := time.Now()
+	template := x509.Certificate{
+		NotBefore:   now,
+		NotAfter:    now.Add(100 * 365 * 24 * time.Hour),
+		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, key.Public(), key)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create TLS certificate: %w", err)
+	}
+
+	// Create a TLS certificate object from the certificate and private key.
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: keyDER})
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse generated TLS certificate: %w", err)
+	}
+
+	// Create a TLS certificate pool and add the generated certificate to it.
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM(certPEM) {
+		return nil, nil, fmt.Errorf("failed to append generated TLS certificate to cert pool")
+	}
+
+	// Create gRPC server transport credentials.
+	serverCreds := grpc.Creds(credentials.NewTLS(&tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    certPool,
+	}))
+
+	// Create gRPC client transport credentials.
+	clientCreds := grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      certPool,
+	}))
+
+	return serverCreds, clientCreds, nil
+}
+
+func newServerObservabilityInterceptor(logger logrus.FieldLogger) grpc.UnaryServerInterceptor {
+
+	// Create metrics.
+	latencySecs := promauto.NewSummaryVec(prometheus.SummaryOpts{
+		Help:      "gRPC server request latency in seconds.",
+		Namespace: metricsNamespace,
+		Name:      "request_latency_seconds",
+	}, []string{"method", "status"})
 
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler) (resp any, err error) {
 
 		start := time.Now()
 
-		// Fetch remote address from context.
-		peer, ok := peer.FromContext(ctx)
-		if !ok {
-			const msg = "peer information is not available, cannot process request"
-			logger.WithField("method", info.FullMethod).Error(msg)
-			return nil, status.Error(codes.InvalidArgument, msg)
-		}
-		remoteAddr := peer.Addr.String()
-		if peer.LocalAddr.String() == localAddr {
-			v := metadata.ValueFromIncomingContext(ctx, metadataKeyRemoteAddr)
-			if len(v) != 1 || v[0] == "" {
-				const msg = "request arriving at the local port for gRPC gateway is missing remote address"
-				logger.WithField("method", info.FullMethod).Error(msg)
-				return nil, status.Error(codes.InvalidArgument, msg)
-			}
-			remoteAddr = v[0]
-		}
-
 		// Inject logger into context.
-		ctx = intoContext(ctx, logger.
-			WithField("remoteAddr", remoteAddr).
-			WithField("method", info.FullMethod))
-		logger := fromContext(ctx)
+		ctx = intoContext(ctx, logger.WithField("method", info.FullMethod))
 
 		// Call handler.
 		resp, err = handler(ctx, req)
 
-		// Compute status.
-		statusCode := codes.OK
-		if err != nil {
-			statusCode = codes.Internal
-		}
-		statusObject, _ := status.FromError(err)
-		if statusObject != nil {
-			statusCode = statusObject.Code()
-		}
-		statusText := statusCode.String()
+		// Handle errors.
+		status, errLogger, err := handleServiceError(ctx, err)
 
 		// Observe latency.
 		latency := time.Since(start)
 		latencySecs.
-			WithLabelValues(info.FullMethod, statusText).
+			WithLabelValues(info.FullMethod, status).
 			Observe(latency.Seconds())
 
-		// Log non-OK requests.
-		if statusCode != codes.OK {
-			l := (*logger).WithField("latency", logrus.Fields{
+		// Log errored requests.
+		if errLogger != nil {
+			errLogger.WithField("latency", logrus.Fields{
 				"human":   latency.String(),
 				"seconds": latency.Seconds(),
-			})
-			grpcStatusToLogger(statusText, statusObject, l, err).
-				WithError(err).Error("error handling request")
+			}).Error("error handling request")
 		}
 
 		return
 	}
 }
 
-func grpcStatusToLogger(statusText string, statusObject *status.Status,
-	logger logrus.FieldLogger, original error) logrus.FieldLogger {
+func newServerRemoteAddrInterceptor(internalAddr string) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler) (resp any, err error) {
 
-	withStatusCode := logger.WithField("statusCode", statusText)
+		// Get the remote address from the peer information.
+		peer, ok := peer.FromContext(ctx)
+		if !ok {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"peer information is not available, cannot process request")
+		}
+		remoteAddr := peer.Addr.String()
 
-	if statusObject == nil {
-		return withStatusCode
+		// If the request is coming from the internal gRPC server for
+		// gRPC gateway, use the remote address from the metadata.
+		if peer.LocalAddr.String() == internalAddr {
+			v := metadata.ValueFromIncomingContext(ctx, metadataKeyRemoteAddr)
+			if len(v) != 1 || v[0] == "" {
+				return nil, status.Errorf(codes.InvalidArgument,
+					"request arriving at the internal port for gRPC gateway is missing remote address")
+			}
+			remoteAddr = v[0]
+		}
+		l := fromContext(ctx)
+		*l = (*l).WithField("remoteAddr", remoteAddr)
+
+		return handler(ctx, req)
 	}
-
-	b, err := protojson.Marshal(statusObject.Proto())
-	if err != nil {
-		withStatusCode.
-			WithError(err).
-			WithField("originalError", original.Error()).
-			Error("failed to marshal error status")
-		return withStatusCode
-	}
-
-	var s any
-	if err := json.Unmarshal(b, &s); err != nil {
-		withStatusCode.
-			WithError(err).
-			WithField("originalError", original.Error()).
-			Error("failed to unmarshal error status")
-		return withStatusCode
-	}
-
-	return logger.WithField("status", s)
 }
 
 func gatewayHeaderMatcher(key string) (string, bool) {
+	// Lib default.
 	if m, ok := runtime.DefaultHeaderMatcher(key); ok {
 		return m, true
 	}
+	// Service account token.
 	if key == httpHeaderServiceAccountToken {
 		return metadataKeyServiceAccountToken, true
 	}
@@ -466,5 +540,6 @@ func gatewayHeaderMatcher(key string) (string, bool) {
 }
 
 func gatewayMetadata(ctx context.Context, r *http.Request) metadata.MD {
+	// Remote address.
 	return metadata.Pairs(metadataKeyRemoteAddr, r.RemoteAddr)
 }

@@ -20,43 +20,41 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package bifröst_test
+package aws
 
 import (
-	"net/http"
-	"testing"
-	"time"
+	"context"
+	"fmt"
 
-	. "github.com/onsi/gomega"
+	"github.com/aws/aws-sdk-go-v2/aws"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
 )
 
-func TestOptions_Apply(t *testing.T) {
-	g := NewWithT(t)
-
-	hc := http.Client{Timeout: 5}
-
-	var o bifröst.Options
-	o.Apply(bifröst.WithContainerRegistry("registry.example.com"))
-	o.Apply(bifröst.WithHTTPClient(hc))
-
-	g.Expect(o.GetContainerRegistry()).To(Equal("registry.example.com"))
-
-	httpClient := o.GetHTTPClient()
-	g.Expect(httpClient).NotTo(BeNil())
-	g.Expect(httpClient.Timeout).To(Equal(time.Duration(5)))
+type credentialsProvider struct {
+	opts []bifröst.Option
 }
 
-func TestOptions_ApplyProviderOptions(t *testing.T) {
-	g := NewWithT(t)
+// NewCredentialsProvider creates a new credentials provider for the given options.
+func NewCredentialsProvider(opts ...bifröst.Option) aws.CredentialsProvider {
+	return &credentialsProvider{opts}
+}
 
-	var o bifröst.Options
-	o.Apply(bifröst.WithProviderOptions(func(obj any) {
-		*obj.(*int) = 42
-	}))
-
-	var x int
-	o.ApplyProviderOptions(&x)
-	g.Expect(x).To(Equal(42))
+// Retrieve implements aws.CredentialsProvider.
+func (c *credentialsProvider) Retrieve(ctx context.Context) (aws.Credentials, error) {
+	token, err := bifröst.GetToken(ctx, Provider{}, c.opts...)
+	if err != nil {
+		return aws.Credentials{}, err
+	}
+	awsToken, ok := token.(*Token)
+	if !ok {
+		return aws.Credentials{}, fmt.Errorf("failed to cast token to AWS token: %T", token)
+	}
+	return aws.Credentials{
+		AccessKeyID:     *awsToken.AccessKeyId,
+		SecretAccessKey: *awsToken.SecretAccessKey,
+		SessionToken:    *awsToken.SessionToken,
+		Expires:         *awsToken.Expiration,
+		CanExpire:       true,
+	}, nil
 }
