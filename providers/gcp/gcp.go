@@ -240,7 +240,8 @@ func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 	// for issuing service account tokens. This audience is
 	// the concatenation of the built-in Workload Identity
 	// Pool and Workload Identity Provider of GKE clusters
-	// prefixed with "identitynamespace:".
+	// separated by a colon and prefixed with
+	// "identitynamespace:".
 	if audience == "" {
 		gkeMetadata := impl.GKEMetadata()
 		if err := gkeMetadata.load(ctx); err != nil {
