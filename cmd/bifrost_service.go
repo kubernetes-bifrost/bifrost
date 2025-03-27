@@ -138,9 +138,10 @@ func (b *bifrostService) GetToken(ctx context.Context, req *bifröstpb.GetTokenR
 	})
 
 	// Set container registry if provided.
+	paramsLoggerData := logrus.Fields{}
 	if cr := req.GetContainerRegistry(); cr != "" {
 		opts = append(opts, bifröst.WithContainerRegistry(cr))
-		*logger = (*logger).WithField("containerRegistry", cr)
+		paramsLoggerData["containerRegistry"] = cr
 	}
 
 	// Detect provider and set provider-specific options.
@@ -152,7 +153,11 @@ func (b *bifrostService) GetToken(ctx context.Context, req *bifröstpb.GetTokenR
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "unsupported provider type: %T", params)
 	}
-	*logger = (*logger).WithField(provider.GetName(), providerLoggerData)
+	paramsLoggerData["provider"] = logrus.Fields{
+		"name":   provider.GetName(),
+		"params": providerLoggerData,
+	}
+	*logger = (*logger).WithField("params", paramsLoggerData)
 
 	// Set cache if configured.
 	if b.cache != nil {
