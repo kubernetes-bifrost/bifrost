@@ -20,43 +20,30 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package bifröst_test
+package gcp_test
 
 import (
-	"net/http"
+	"context"
 	"testing"
-	"time"
 
 	. "github.com/onsi/gomega"
+	"golang.org/x/oauth2/google/externalaccount"
 
-	bifröst "github.com/kubernetes-bifrost/bifrost"
+	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 )
 
-func TestOptions_Apply(t *testing.T) {
-	g := NewWithT(t)
+func TestTokenSupplier_SubjectToken(t *testing.T) {
+	for _, tt := range []string{
+		"some-token",
+		"another-token",
+	} {
+		t.Run(tt, func(t *testing.T) {
+			g := NewWithT(t)
 
-	hc := http.Client{Timeout: 5}
-
-	var o bifröst.Options
-	o.Apply(bifröst.WithContainerRegistry("registry.example.com"))
-	o.Apply(bifröst.WithHTTPClient(hc))
-
-	g.Expect(o.GetContainerRegistry()).To(Equal("registry.example.com"))
-
-	httpClient := o.GetHTTPClient()
-	g.Expect(httpClient).NotTo(BeNil())
-	g.Expect(httpClient.Timeout).To(Equal(time.Duration(5)))
-}
-
-func TestOptions_ApplyProviderOptions(t *testing.T) {
-	g := NewWithT(t)
-
-	var o bifröst.Options
-	o.Apply(bifröst.WithProviderOptions(func(obj any) {
-		*obj.(*int) = 42
-	}))
-
-	var x int
-	o.ApplyProviderOptions(&x)
-	g.Expect(x).To(Equal(42))
+			tokenSupplier := gcp.TokenSupplier(tt)
+			token, err := tokenSupplier.SubjectToken(context.Background(), externalaccount.SupplierOptions{})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(token).To(Equal(tt))
+		})
+	}
 }

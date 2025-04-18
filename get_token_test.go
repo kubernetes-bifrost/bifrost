@@ -28,7 +28,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net/http"
-	"net/url"
 	"testing"
 	"time"
 
@@ -615,7 +614,7 @@ func TestGetToken(t *testing.T) {
 			provider: mockProvider{cacheKeyServiceAccount: true},
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
-					key:   "6f02da35ec951a19f3cdaf0fdf014dfcf58fa4f8a658f2272ca130165948357a",
+					key:   "41fe132178d5d0a829cf8019bc12b09ae9bf75ad87c7bfa85cdd0e81d3ba47e3",
 					token: &mockToken{value: "cached-identity-token-access-token"},
 				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
@@ -625,7 +624,6 @@ func TestGetToken(t *testing.T) {
 				bifröst.WithIdentityProvider(&mockProvider{
 					name: "idp",
 				}),
-				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "bifrost"}),
 			},
 			expectedToken: &mockToken{value: "cached-identity-token-access-token"},
 		},
@@ -634,7 +632,7 @@ func TestGetToken(t *testing.T) {
 			provider: mockProvider{cacheKeyServiceAccount: true},
 			opts: []bifröst.Option{
 				bifröst.WithCache(&mockCache{
-					key:   "5f756d38a58f271d5ef964c8dfc16992fd0dc94e0363bdba32fb51dcbdea4255",
+					key:   "6f48cbdc440ddd79ef46cd062e4d9fc2577a67cda8b98b924a9581be781f9caf",
 					token: &mockToken{value: "cached-identity-token-registry-token"},
 				}),
 				bifröst.WithServiceAccount(client.ObjectKey{
@@ -644,7 +642,6 @@ func TestGetToken(t *testing.T) {
 				bifröst.WithIdentityProvider(&mockProvider{
 					name: "idp",
 				}),
-				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "bifrost"}),
 				bifröst.WithContainerRegistry("test-registry"),
 			},
 			expectedToken: &mockToken{value: "cached-identity-token-registry-token"},
@@ -704,7 +701,6 @@ func TestGetToken(t *testing.T) {
 			provider: mockProvider{
 				audience:        "provider-audience",
 				tokenAudience:   "provider-audience",
-				tokenProxyURL:   "http://bifrost",
 				tokenOIDCClient: oidcClient,
 				token:           &mockToken{value: "identity-token-access-token"},
 			},
@@ -717,33 +713,28 @@ func TestGetToken(t *testing.T) {
 					name:                     "idp",
 					audience:                 "identity-provider-audience",
 					tokenAudience:            "identity-provider-audience",
-					tokenProxyURL:            "http://bifrost",
 					tokenOIDCClient:          oidcClient,
 					tokenExpectDirectAccess:  true,
 					token:                    &mockToken{value: "identity-provider-access-token"},
 					identityTokenAccessToken: &mockToken{value: "identity-provider-access-token"},
 					identityTokenAudience:    "provider-audience",
-					identityTokenProxyURL:    "http://bifrost",
 					identityToken:            identityToken,
 				}),
-				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "bifrost"}),
 				bifröst.WithProviderOptions(func(any) {}),
+				bifröst.WithHTTPClient(http.Client{}),
 			},
 			expectedToken: &mockToken{value: "identity-token-access-token"},
 		},
 		{
 			name: "container registry login from default",
 			provider: mockProvider{
-				defaultTokenProxyURL:     "http://bifrost",
 				defaultToken:             &mockToken{value: "default-access-token"},
 				registryLoginAccessToken: &mockToken{value: "default-access-token"},
-				registryLoginProxyURL:    "http://bifrost",
 				registryLogin:            &bifröst.ContainerRegistryLogin{Username: "registry-default-token"},
 				registryHost:             "test-registry",
 			},
 			opts: []bifröst.Option{
 				bifröst.WithContainerRegistry("test-registry"),
-				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "bifrost"}),
 			},
 			expectedToken: &bifröst.ContainerRegistryLogin{Username: "registry-default-token"},
 		},
@@ -752,11 +743,9 @@ func TestGetToken(t *testing.T) {
 			provider: mockProvider{
 				audience:                 "provider-audience",
 				tokenAudience:            "provider-audience",
-				tokenProxyURL:            "http://bifrost",
 				tokenOIDCClient:          oidcClient,
 				token:                    &mockToken{value: "service-account-access-token"},
 				registryLoginAccessToken: &mockToken{value: "service-account-access-token"},
-				registryLoginProxyURL:    "http://bifrost",
 				registryLogin:            &bifröst.ContainerRegistryLogin{Username: "registry-token"},
 				registryHost:             "test-registry",
 			},
@@ -766,7 +755,6 @@ func TestGetToken(t *testing.T) {
 					Namespace: "default",
 				}, kubeClient),
 				bifröst.WithContainerRegistry("test-registry"),
-				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "bifrost"}),
 			},
 			expectedToken: &bifröst.ContainerRegistryLogin{Username: "registry-token"},
 		},
@@ -775,11 +763,9 @@ func TestGetToken(t *testing.T) {
 			provider: mockProvider{
 				audience:                 "provider-audience",
 				tokenAudience:            "provider-audience",
-				tokenProxyURL:            "http://bifrost",
 				tokenOIDCClient:          oidcClient,
 				token:                    &mockToken{value: "registry-identity-token-access-token"},
 				registryLoginAccessToken: &mockToken{value: "registry-identity-token-access-token"},
-				registryLoginProxyURL:    "http://bifrost",
 				registryLogin:            &bifröst.ContainerRegistryLogin{Username: "registry-identity-token-access-token"},
 				registryHost:             "test-registry",
 			},
@@ -792,26 +778,22 @@ func TestGetToken(t *testing.T) {
 					name:                     "idp",
 					audience:                 "identity-provider-audience",
 					tokenAudience:            "identity-provider-audience",
-					tokenProxyURL:            "http://bifrost",
 					tokenOIDCClient:          oidcClient,
 					tokenExpectDirectAccess:  true,
 					token:                    &mockToken{value: "identity-provider-access-token"},
 					identityTokenAccessToken: &mockToken{value: "identity-provider-access-token"},
 					identityTokenAudience:    "provider-audience",
-					identityTokenProxyURL:    "http://bifrost",
 					identityToken:            identityToken,
 				}),
 				bifröst.WithContainerRegistry("test-registry"),
-				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "bifrost"}),
 			},
 			expectedToken: &bifröst.ContainerRegistryLogin{Username: "registry-identity-token-access-token"},
 		},
 		{
-			name: "proxy URL from options has priority over service account annotation",
+			name: "http client from options has priority over proxy service account annotation",
 			provider: mockProvider{
 				audience:        "provider-audience",
 				tokenAudience:   "provider-audience",
-				tokenProxyURL:   "http://option-proxy",
 				tokenOIDCClient: oidcClient,
 				token:           &mockToken{value: "option-proxy-token"},
 			},
@@ -820,25 +802,7 @@ func TestGetToken(t *testing.T) {
 					Name:      "proxy-secret",
 					Namespace: "default",
 				}, kubeClient),
-				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "option-proxy"}),
-			},
-			expectedToken: &mockToken{value: "option-proxy-token"},
-		},
-		{
-			name: "proxy URL from options has priority over service account annotation even if empty",
-			provider: mockProvider{
-				audience:        "provider-audience",
-				tokenAudience:   "provider-audience",
-				tokenProxyURL:   "",
-				tokenOIDCClient: oidcClient,
-				token:           &mockToken{value: "option-proxy-token"},
-			},
-			opts: []bifröst.Option{
-				bifröst.WithServiceAccount(client.ObjectKey{
-					Name:      "proxy-secret",
-					Namespace: "default",
-				}, kubeClient),
-				bifröst.WithProxyURL(url.URL{}),
+				bifröst.WithHTTPClient(http.Client{}),
 			},
 			expectedToken: &mockToken{value: "option-proxy-token"},
 		},
@@ -856,6 +820,7 @@ func TestGetToken(t *testing.T) {
 					Name:      "proxy-secret",
 					Namespace: "default",
 				}, kubeClient),
+				bifröst.WithCache(&mockCache{}),
 			},
 			expectedToken: &mockToken{value: "sa-proxy-token"},
 		},
@@ -891,7 +856,6 @@ type mockProvider struct {
 	cacheKeyServiceAccount   bool
 	defaultToken             bifröst.Token
 	defaultTokenErr          bool
-	defaultTokenProxyURL     string
 	audience                 string
 	audienceErr              bool
 	token                    bifröst.Token
@@ -903,12 +867,10 @@ type mockProvider struct {
 	registryHost             string
 	registryLogin            *bifröst.ContainerRegistryLogin
 	registryLoginErr         bool
-	registryLoginProxyURL    string
 	registryLoginAccessToken bifröst.Token
 	identityToken            string
 	identityTokenErr         bool
 	identityTokenAudience    string
-	identityTokenProxyURL    string
 	identityTokenAccessToken bifröst.Token
 }
 
@@ -936,7 +898,7 @@ func (m *mockProvider) GetName() string {
 
 func (m *mockProvider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...bifröst.Option) (string, error) {
 	if m.cacheKeyErr {
-		return "", mockErr
+		return "", errMock
 	}
 
 	if m.cacheKeyServiceAccount && serviceAccount == nil {
@@ -956,39 +918,24 @@ func (m *mockProvider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts
 }
 
 func (m *mockProvider) NewDefaultAccessToken(ctx context.Context, opts ...bifröst.Option) (bifröst.Token, error) {
-
 	if m.defaultTokenErr {
-		return nil, mockErr
+		return nil, errMock
 	}
-
-	var o bifröst.Options
-	o.Apply(opts...)
-
-	// Check proxy URL.
-	var proxyURL string
-	if hc := o.GetHTTPClient(); hc != nil {
-		u, _ := hc.Transport.(*http.Transport).Proxy(nil)
-		proxyURL = u.String()
-	}
-	if proxyURL != m.defaultTokenProxyURL {
-		return nil, fmt.Errorf("expected proxy URL %q, got %q", m.defaultTokenProxyURL, proxyURL)
-	}
-
 	return m.defaultToken, nil
 }
 
-func (m *mockProvider) GetAudience(context.Context, *corev1.ServiceAccount, ...bifröst.Option) (string, error) {
+func (m *mockProvider) GetAudience(context.Context, corev1.ServiceAccount, ...bifröst.Option) (string, error) {
 	if m.audienceErr {
-		return "", mockErr
+		return "", errMock
 	}
 	return m.audience, nil
 }
 
 func (m *mockProvider) NewAccessToken(ctx context.Context, identityToken string,
-	serviceAccount *corev1.ServiceAccount, opts ...bifröst.Option) (bifröst.Token, error) {
+	serviceAccount corev1.ServiceAccount, opts ...bifröst.Option) (bifröst.Token, error) {
 
 	if m.tokenErr {
-		return nil, mockErr
+		return nil, errMock
 	}
 
 	var o bifröst.Options
@@ -1019,20 +966,32 @@ func (m *mockProvider) NewAccessToken(ctx context.Context, identityToken string,
 		return nil, fmt.Errorf("failed to verify OIDC token: %w", err)
 	}
 
-	// Check service account.
-	if serviceAccount == nil {
-		return nil, fmt.Errorf("expected service account, got nil")
-	}
-
 	// Check proxy URL.
-	var proxyURL string
-	if hc := o.GetHTTPClient(); hc != nil {
-		if u, _ := hc.Transport.(*http.Transport).Proxy(nil); u != nil {
-			proxyURL = u.String()
+	if m.tokenProxyURL != "" {
+		hc := o.GetHTTPClient()
+		if hc == nil {
+			return nil, fmt.Errorf("expected HTTP client, got nil")
 		}
-	}
-	if proxyURL != m.tokenProxyURL {
-		return nil, fmt.Errorf("expected proxy URL %q, got %q", m.tokenProxyURL, proxyURL)
+		if hc.Transport == nil {
+			return nil, fmt.Errorf("expected HTTP transport, got nil")
+		}
+		ht, ok := hc.Transport.(*http.Transport)
+		if !ok {
+			return nil, fmt.Errorf("expected HTTP transport, got %T", hc.Transport)
+		}
+		if ht.Proxy == nil {
+			return nil, fmt.Errorf("expected HTTP proxy, got nil")
+		}
+		u, err := ht.Proxy(nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get proxy URL: %w", err)
+		}
+		if u == nil {
+			return nil, fmt.Errorf("expected proxy URL, got nil")
+		}
+		if m.tokenProxyURL != u.String() {
+			return nil, fmt.Errorf("expected proxy URL %q, got %q", m.tokenProxyURL, u.String())
+		}
 	}
 
 	// Check prefer direct access.
@@ -1047,11 +1006,8 @@ func (m *mockProvider) NewRegistryLogin(ctx context.Context, containerRegistry s
 	accessToken bifröst.Token, opts ...bifröst.Option) (*bifröst.ContainerRegistryLogin, error) {
 
 	if m.registryLoginErr {
-		return nil, mockErr
+		return nil, errMock
 	}
-
-	var o bifröst.Options
-	o.Apply(opts...)
 
 	// Check container registry.
 	if m.registryHost != containerRegistry {
@@ -1068,28 +1024,15 @@ func (m *mockProvider) NewRegistryLogin(ctx context.Context, containerRegistry s
 			m.registryLoginAccessToken.(*mockToken).value, accessToken.(*mockToken).value)
 	}
 
-	// Check proxy URL.
-	var proxyURL string
-	if hc := o.GetHTTPClient(); hc != nil {
-		u, _ := hc.Transport.(*http.Transport).Proxy(nil)
-		proxyURL = u.String()
-	}
-	if proxyURL != m.registryLoginProxyURL {
-		return nil, fmt.Errorf("expected proxy URL %q, got %q", m.registryLoginProxyURL, proxyURL)
-	}
-
 	return m.registryLogin, nil
 }
 
 func (m *mockProvider) NewIdentityToken(ctx context.Context, accessToken bifröst.Token,
-	serviceAccount *corev1.ServiceAccount, audience string, opts ...bifröst.Option) (string, error) {
+	serviceAccount corev1.ServiceAccount, audience string, opts ...bifröst.Option) (string, error) {
 
 	if m.identityTokenErr {
-		return "", mockErr
+		return "", errMock
 	}
-
-	var o bifröst.Options
-	o.Apply(opts...)
 
 	// Check access token.
 	if m.identityTokenAccessToken == nil {
@@ -1100,27 +1043,12 @@ func (m *mockProvider) NewIdentityToken(ctx context.Context, accessToken bifrös
 			m.identityTokenAccessToken.(*mockToken).value, accessToken.(*mockToken).value)
 	}
 
-	// Check service account.
-	if serviceAccount == nil {
-		return "", fmt.Errorf("expected service account, got nil")
-	}
-
 	// Check audience.
 	if audience != m.identityTokenAudience {
 		return "", fmt.Errorf("expected audience %q, got %q", m.identityTokenAudience, audience)
 	}
 
-	// Check proxy URL.
-	var proxyURL string
-	if hc := o.GetHTTPClient(); hc != nil {
-		u, _ := hc.Transport.(*http.Transport).Proxy(nil)
-		proxyURL = u.String()
-	}
-	if proxyURL != m.identityTokenProxyURL {
-		return "", fmt.Errorf("expected proxy URL %q, got %q", m.identityTokenProxyURL, proxyURL)
-	}
-
 	return m.identityToken, nil
 }
 
-var mockErr = fmt.Errorf("mock error")
+var errMock = fmt.Errorf("mock error")

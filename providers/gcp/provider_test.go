@@ -24,11 +24,8 @@ package gcp_test
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/url"
-	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -36,66 +33,12 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google/externalaccount"
 	"google.golang.org/api/impersonate"
-	"google.golang.org/api/option"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
 	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
-	httptesting "github.com/kubernetes-bifrost/bifrost/testing/http"
 )
-
-func TestWithServiceAccountEmail(t *testing.T) {
-	for _, tt := range []struct {
-		name        string
-		email       string
-		expectedKey string
-	}{
-		{
-			name:        "present",
-			email:       "test@project-id.iam.gserviceaccount.com",
-			expectedKey: "da7b9dbfa3ec01db68b32c7f8bfa24322b9a73c965efc2b37834cd31060f3aaa",
-		},
-		{
-			name:        "absent",
-			expectedKey: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			var opts []bifröst.Option
-
-			opts = append(opts, bifröst.WithProviderOptions(gcp.WithServiceAccountEmail(tt.email)))
-
-			key, err := gcp.Provider{}.BuildCacheKey(&corev1.ServiceAccount{}, opts...)
-			g.Expect(err).NotTo(HaveOccurred())
-
-			g.Expect(key).To(Equal(tt.expectedKey))
-		})
-	}
-}
-
-func TestToken_GetDuration(t *testing.T) {
-	g := NewWithT(t)
-
-	token := &gcp.Token{oauth2.Token{
-		Expiry: time.Now().Add(time.Hour),
-	}}
-
-	duration := token.GetDuration()
-	g.Expect(duration).To(BeNumerically("~", time.Hour, time.Second))
-}
-
-func TestToken_Source(t *testing.T) {
-	g := NewWithT(t)
-
-	oauth2Token := oauth2.Token{AccessToken: "test-token"}
-
-	token := &gcp.Token{oauth2Token}
-
-	g.Expect(token.Source().Token()).To(Equal(&oauth2Token))
-}
 
 func TestProvider_GetName(t *testing.T) {
 	g := NewWithT(t)
@@ -140,7 +83,7 @@ func TestProvider_BuildCacheKey(t *testing.T) {
 				bifröst.WithProviderOptions(
 					gcp.WithServiceAccountEmail("opts@project-id.iam.gserviceaccount.com")),
 			},
-			expectedKey: "12a43f116254259fbdd60ddd88301d0880b1c272baf26095d16f1b52df27ac59",
+			expectedKey: "0d629042aaadefa1ee3d3eb28590cf03285782370a8ccba98136ee872a460570",
 		},
 		{
 			name: "service account email from options has precedence over kubernetes service account annotations (even if empty)",
@@ -166,7 +109,7 @@ func TestProvider_BuildCacheKey(t *testing.T) {
 					},
 				},
 			},
-			expectedKey: "b6492b105bff1853007becdf3a7d255a1afcddd88c88f43f9a859f1ea2acb9af",
+			expectedKey: "e32ce689f177b9e25de33c30b25b9257cd8dc357108bb5d76f27461a65dceb5d",
 		},
 		{
 			name: "invalid service account email",
@@ -220,7 +163,7 @@ func TestProvider_NewDefaultAccessToken(t *testing.T) {
 		{
 			name: "success",
 			opts: []bifröst.Option{
-				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
+				withProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
 				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{
 					token:            &oauth2.Token{AccessToken: "some-access-token"},
 					expectedProxyURL: "http://proxy-bifrost",
@@ -249,7 +192,7 @@ func TestProvider_GetAudience(t *testing.T) {
 	for _, tt := range []struct {
 		name                 string
 		opts                 []bifröst.Option
-		serviceAccount       *corev1.ServiceAccount
+		serviceAccount       corev1.ServiceAccount
 		gkeMetadataServerErr bool
 		expectedAudience     string
 		expectedErr          string
@@ -260,7 +203,7 @@ func TestProvider_GetAudience(t *testing.T) {
 				bifröst.WithProviderOptions(gcp.WithWorkloadIdentityProvider("projects/1234/locations/global/workloadIdentityPools/pool/providers/options")),
 				bifröst.WithProviderOptions(gcp.WithDefaultWorkloadIdentityProvider("projects/1234/locations/global/workloadIdentityPools/pool/providers/default")),
 			},
-			serviceAccount: &corev1.ServiceAccount{
+			serviceAccount: corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						"gcp.bifrost-k8s.io/workloadIdentityProvider": "projects/1234/locations/global/workloadIdentityPools/pool/providers/sa",
@@ -275,7 +218,7 @@ func TestProvider_GetAudience(t *testing.T) {
 				bifröst.WithProviderOptions(gcp.WithWorkloadIdentityProvider("projects1234/locations/global/workloadIdentityPools/pool/providers/options")),
 				bifröst.WithProviderOptions(gcp.WithDefaultWorkloadIdentityProvider("projects/1234/locations/global/workloadIdentityPools/pool/providers/default")),
 			},
-			serviceAccount: &corev1.ServiceAccount{
+			serviceAccount: corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						"gcp.bifrost-k8s.io/workloadIdentityProvider": "projects/1234/locations/global/workloadIdentityPools/pool/providers/sa",
@@ -289,7 +232,7 @@ func TestProvider_GetAudience(t *testing.T) {
 			opts: []bifröst.Option{
 				bifröst.WithProviderOptions(gcp.WithDefaultWorkloadIdentityProvider("projects/1234/locations/global/workloadIdentityPools/pool/providers/default")),
 			},
-			serviceAccount: &corev1.ServiceAccount{
+			serviceAccount: corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						"gcp.bifrost-k8s.io/workloadIdentityProvider": "projects/1234/locations/global/workloadIdentityPools/pool/providers/sa",
@@ -303,7 +246,7 @@ func TestProvider_GetAudience(t *testing.T) {
 			opts: []bifröst.Option{
 				bifröst.WithProviderOptions(gcp.WithDefaultWorkloadIdentityProvider("projects/1234/locations/global/workloadIdentityPools/pool/providers/default")),
 			},
-			serviceAccount: &corev1.ServiceAccount{
+			serviceAccount: corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						"gcp.bifrost-k8s.io/workloadIdentityProvider": "projects/1234locations/global/workloadIdentityPools/pool/providers/sa",
@@ -416,7 +359,7 @@ func TestProvider_NewAccessToken(t *testing.T) {
 			name:          "success",
 			identityToken: "some-identity-token",
 			opts: []bifröst.Option{
-				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
+				withProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
 				bifröst.WithProviderOptions(
 					gcp.WithServiceAccountEmail("nat@project-id.iam.gserviceaccount.com"),
 					gcp.WithImplementation(&mockImpl{
@@ -453,7 +396,7 @@ func TestProvider_NewAccessToken(t *testing.T) {
 			}).start(t)
 
 			token, err := gcp.Provider{}.NewAccessToken(context.Background(),
-				tt.identityToken, &corev1.ServiceAccount{}, tt.opts...)
+				tt.identityToken, corev1.ServiceAccount{}, tt.opts...)
 
 			if tt.expectedErr != "" {
 				g.Expect(err).To(HaveOccurred())
@@ -510,7 +453,7 @@ func TestProvider_NewIdentityToken(t *testing.T) {
 			name:     "error on new transport",
 			audience: "some-audience",
 			opts: []bifröst.Option{
-				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
+				withProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
 				bifröst.WithProviderOptions(
 					gcp.WithImplementation(&mockImpl{transportErr: true}),
 					gcp.WithServiceAccountEmail("nit@project-id.iam.gserviceaccount.com")),
@@ -542,7 +485,7 @@ func TestProvider_NewIdentityToken(t *testing.T) {
 			accessToken: gcp.Token{oauth2.Token{AccessToken: "some-access-token"}},
 			audience:    "some-audience",
 			opts: []bifröst.Option{
-				bifröst.WithProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
+				withProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
 				bifröst.WithProviderOptions(
 					gcp.WithServiceAccountEmail("nit@project-id.iam.gserviceaccount.com"),
 					gcp.WithImplementation(&mockImpl{
@@ -563,7 +506,7 @@ func TestProvider_NewIdentityToken(t *testing.T) {
 			g := NewWithT(t)
 
 			token, err := gcp.Provider{}.NewIdentityToken(context.Background(),
-				&tt.accessToken, &corev1.ServiceAccount{}, tt.audience, tt.opts...)
+				&tt.accessToken, corev1.ServiceAccount{}, tt.audience, tt.opts...)
 
 			if tt.expectedErr != "" {
 				g.Expect(err).To(HaveOccurred())
@@ -576,429 +519,8 @@ func TestProvider_NewIdentityToken(t *testing.T) {
 	}
 }
 
-func TestParseWorkloadIdentityProvider(t *testing.T) {
-	for _, tt := range []struct {
-		name                     string
-		workloadIdentityProvider string
-		expectedAudience         string
-		expectedErr              string
-	}{
-		{
-			name:                     "has https: prefix",
-			workloadIdentityProvider: "https://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
-			expectedAudience:         "https://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
-		},
-		{
-			name:                     "has only //iam.googleapis.com/ prefix",
-			workloadIdentityProvider: "//iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
-			expectedAudience:         "https://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
-		},
-		{
-			name:                     "has only the provider full name",
-			workloadIdentityProvider: "projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
-			expectedAudience:         "https://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
-		},
-		{
-			name:                     "has http instead of https",
-			workloadIdentityProvider: "http://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
-			expectedErr:              "invalid GCP workload identity provider: 'http://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster'. must match ^((https:)?//iam.googleapis.com/)?projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			audience, err := gcp.ParseWorkloadIdentityProvider(tt.workloadIdentityProvider)
-
-			if tt.expectedErr != "" {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tt.expectedErr))
-			} else {
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(audience).To(Equal(tt.expectedAudience))
-			}
-		})
-	}
-}
-
-func TestOnGKE(t *testing.T) {
-	t.Run("not on GKE, timeout", func(t *testing.T) {
-		g := NewWithT(t)
-		start := time.Now()
-		ok := gcp.OnGKE(context.Background())
-		latency := time.Since(start)
-		g.Expect(ok).To(BeFalse())
-		g.Expect(latency).To(BeNumerically("~", time.Second, 400*time.Millisecond))
-	})
-
-	t.Run("on GKE, but metadata service errors", func(t *testing.T) {
-		g := NewWithT(t)
-
-		(&gkeMetadataServer{
-			projectID:    "ongke-project-id",
-			location:     "ongke-location",
-			name:         "ongke-name",
-			projectIDErr: true,
-			locationErr:  true,
-			nameErr:      true,
-		}).start(t)
-
-		start := time.Now()
-		ok := gcp.OnGKE(context.Background())
-		latency := time.Since(start)
-		g.Expect(ok).To(BeFalse())
-		g.Expect(latency).To(BeNumerically("~", 0, 200*time.Millisecond))
-	})
-
-	t.Run("on GKE, success", func(t *testing.T) {
-		g := NewWithT(t)
-
-		(&gkeMetadataServer{
-			projectID: "ongke-project-id",
-			location:  "ongke-location",
-			name:      "ongke-name",
-		}).start(t)
-
-		start := time.Now()
-		ok := gcp.OnGKE(context.Background())
-		latency := time.Since(start)
-		g.Expect(ok).To(BeTrue())
-		g.Expect(latency).To(BeNumerically("~", 0, 200*time.Millisecond))
-	})
-
-	t.Run("on GKE, cached", func(t *testing.T) {
-		g := NewWithT(t)
-
-		start := time.Now()
-		ok := gcp.OnGKE(context.Background())
-		latency := time.Since(start)
-		g.Expect(ok).To(BeTrue())
-		g.Expect(latency).To(BeNumerically("~", 0, 10*time.Millisecond))
-	})
-}
-
-func TestGKEMetadata_GetAudience(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-
-		clusterProjectID    string
-		clusterLocation     string
-		clusterName         string
-		clusterProjectIDErr bool
-		clusterLocationErr  bool
-		clusterNameErr      bool
-
-		expectedAudience string
-		expectedErr      string
-	}{
-		{
-			name:                "error on loading cluster project ID",
-			clusterProjectIDErr: true,
-			expectedErr:         "failed to get GKE cluster project ID from the metadata service: metadata: GCE metadata \"project/project-id\" not defined",
-		},
-		{
-			name:               "error on loading cluster location",
-			clusterProjectID:   "gke-project-id",
-			clusterLocationErr: true,
-			expectedErr:        "failed to get GKE cluster location from the metadata service: metadata: GCE metadata \"instance/attributes/cluster-location\" not defined",
-		},
-		{
-			name:             "error on loading cluster name",
-			clusterProjectID: "gke-project-id",
-			clusterLocation:  "gke-location",
-			clusterNameErr:   true,
-			expectedErr:      "failed to get GKE cluster name from the metadata service: metadata: GCE metadata \"instance/attributes/cluster-name\" not defined",
-		},
-		{
-			name:             "error due to empty cluster project ID",
-			clusterProjectID: "",
-			expectedErr:      "failed to get GKE cluster project ID from the metadata service: empty value",
-		},
-		{
-			name:             "error due to empty cluster location",
-			clusterProjectID: "gke-project-id",
-			clusterLocation:  "",
-			expectedErr:      "failed to get GKE cluster location from the metadata service: empty value",
-		},
-		{
-			name:             "error due to empty cluster name",
-			clusterProjectID: "gke-project-id",
-			clusterLocation:  "gke-location",
-			clusterName:      "",
-			expectedErr:      "failed to get GKE cluster name from the metadata service: empty value",
-		},
-		{
-			name:             "success",
-			clusterProjectID: "gke-project-id",
-			clusterLocation:  "gke-location",
-			clusterName:      "gke-name",
-			expectedAudience: "identitynamespace:gke-project-id.svc.id.goog:https://container.googleapis.com/v1/projects/gke-project-id/locations/gke-location/clusters/gke-name",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			(&gkeMetadataServer{
-				projectID:    tt.clusterProjectID,
-				location:     tt.clusterLocation,
-				name:         tt.clusterName,
-				projectIDErr: tt.clusterProjectIDErr,
-				locationErr:  tt.clusterLocationErr,
-				nameErr:      tt.clusterNameErr,
-			}).start(t)
-
-			audience, err := (&gcp.GKEMetadata{}).GetAudience(context.Background())
-
-			if tt.expectedErr != "" {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tt.expectedErr))
-			} else {
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(audience).To(Equal(tt.expectedAudience))
-			}
-		})
-	}
-}
-
-func TestGKEMetadata_WorkloadIdentityPool(t *testing.T) {
-	for _, tt := range []struct {
-		name             string
-		err              bool
-		expectedAudience string
-		expectErr        bool
-	}{
-		{
-			name:      "error",
-			err:       true,
-			expectErr: true,
-		},
-		{
-			name:             "success",
-			expectedAudience: "wipool-project-id.svc.id.goog",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			(&gkeMetadataServer{
-				projectID:    "wipool-project-id",
-				location:     "wipool-location",
-				name:         "wipool-name",
-				projectIDErr: tt.err,
-				locationErr:  tt.err,
-				nameErr:      tt.err,
-			}).start(t)
-
-			audience, err := (&gcp.GKEMetadata{}).WorkloadIdentityPool(context.Background())
-
-			if tt.expectErr {
-				g.Expect(err).To(HaveOccurred())
-			} else {
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(audience).To(Equal(tt.expectedAudience))
-			}
-		})
-	}
-}
-
-func TestGKEMetadata_WorkloadIdentityProvider(t *testing.T) {
-	for _, tt := range []struct {
-		name             string
-		err              bool
-		expectedAudience string
-		expectErr        bool
-	}{
-		{
-			name:      "error",
-			err:       true,
-			expectErr: true,
-		},
-		{
-			name:             "success",
-			expectedAudience: "https://container.googleapis.com/v1/projects/wiprovider-project-id/locations/wiprovider-location/clusters/wiprovider-name",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			(&gkeMetadataServer{
-				projectID:    "wiprovider-project-id",
-				location:     "wiprovider-location",
-				name:         "wiprovider-name",
-				projectIDErr: tt.err,
-				locationErr:  tt.err,
-				nameErr:      tt.err,
-			}).start(t)
-
-			audience, err := (&gcp.GKEMetadata{}).WorkloadIdentityProvider(context.Background())
-
-			if tt.expectErr {
-				g.Expect(err).To(HaveOccurred())
-			} else {
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(audience).To(Equal(tt.expectedAudience))
-			}
-		})
-	}
-}
-
-func TestTokenSupplier_SubjectToken(t *testing.T) {
-	for _, tt := range []string{
-		"some-token",
-		"another-token",
-	} {
-		t.Run(tt, func(t *testing.T) {
-			g := NewWithT(t)
-
-			tokenSupplier := gcp.TokenSupplier(tt)
-			token, err := tokenSupplier.SubjectToken(context.Background(), externalaccount.SupplierOptions{})
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(token).To(Equal(tt))
-		})
-	}
-}
-
-type gkeMetadataServer struct {
-	projectID    string
-	location     string
-	name         string
-	projectIDErr bool
-	locationErr  bool
-	nameErr      bool
-}
-
-func (g *gkeMetadataServer) start(t *testing.T) {
-	t.Helper()
-
-	endpoint, _ := httptesting.NewServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/computeMetadata/v1/project/project-id":
-			if g.projectIDErr {
-				w.WriteHeader(http.StatusNotFound)
-			} else {
-				fmt.Fprintf(w, "%s", g.projectID)
-			}
-		case "/computeMetadata/v1/instance/attributes/cluster-location":
-			if g.locationErr {
-				w.WriteHeader(http.StatusNotFound)
-			} else {
-				fmt.Fprintf(w, "%s", g.location)
-			}
-		case "/computeMetadata/v1/instance/attributes/cluster-name":
-			if g.nameErr {
-				w.WriteHeader(http.StatusNotFound)
-			} else {
-				fmt.Fprintf(w, "%s", g.name)
-			}
-		}
-	}))
-	gceMetadataHost := strings.TrimPrefix(endpoint, "http://")
-
-	gceMetadataHostBackup, ok := os.LookupEnv("GCE_METADATA_HOST")
-	os.Setenv("GCE_METADATA_HOST", gceMetadataHost)
-	t.Cleanup(func() {
-		if ok {
-			os.Setenv("GCE_METADATA_HOST", gceMetadataHostBackup)
-		}
-	})
-}
-
-type mockImpl struct {
-	t                 *testing.T
-	token             *oauth2.Token
-	sourceErr         bool
-	transportErr      bool
-	gkeMetadata       gcp.GKEMetadata
-	expectedProxyURL  string
-	expectedExtConfig *externalaccount.Config
-	expectedImpConfig *impersonate.IDTokenConfig
-}
-
-type mockTokenSource struct {
-	token *oauth2.Token
-}
-
-func (m *mockImpl) GKEMetadata() *gcp.GKEMetadata {
-	return &m.gkeMetadata
-}
-
-func (m *mockImpl) NewDefaultAccessTokenSource(ctx context.Context, scopes ...string) (oauth2.TokenSource, error) {
-	if err := checkOAuth2ProxyURL(ctx, m.expectedProxyURL); err != nil {
-		return nil, err
-	}
-	if len(scopes) > 0 {
-		return nil, fmt.Errorf("unexpected scopes")
-	}
-	return &mockTokenSource{m.token}, getError(m.sourceErr)
-}
-
-func (m *mockImpl) NewAccessTokenSource(ctx context.Context, conf *externalaccount.Config) (oauth2.TokenSource, error) {
-	if err := checkOAuth2ProxyURL(ctx, m.expectedProxyURL); err != nil {
-		return nil, err
-	}
-	if m.expectedExtConfig != nil {
-		m.t.Helper()
-		g := NewWithT(m.t)
-		identityToken, err := conf.SubjectTokenSupplier.SubjectToken(ctx, externalaccount.SupplierOptions{})
-		g.Expect(err).NotTo(HaveOccurred())
-		expectedIdentityToken, err := m.expectedExtConfig.SubjectTokenSupplier.SubjectToken(ctx, externalaccount.SupplierOptions{})
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(identityToken).To(Equal(expectedIdentityToken))
-		conf.SubjectTokenSupplier = nil
-		m.expectedExtConfig.SubjectTokenSupplier = nil
-		g.Expect(conf).To(Equal(m.expectedExtConfig))
-	}
-	return &mockTokenSource{m.token}, getError(m.sourceErr)
-}
-
-func (m *mockImpl) NewIDTokenSource(ctx context.Context, config *impersonate.IDTokenConfig, opts ...option.ClientOption) (oauth2.TokenSource, error) {
-	if m.expectedImpConfig != nil {
-		m.t.Helper()
-		g := NewWithT(m.t)
-		g.Expect(config).To(Equal(m.expectedImpConfig))
-	}
-	return &mockTokenSource{m.token}, getError(m.sourceErr)
-}
-
-func (m *mockImpl) NewTransport(ctx context.Context, base http.RoundTripper, opts ...option.ClientOption) (http.RoundTripper, error) {
-	return base, getError(m.transportErr)
-}
-
-func (m *mockTokenSource) Token() (*oauth2.Token, error) {
-	if m.token == nil {
-		return nil, getError(true)
-	}
-	return m.token, nil
-}
-
-func checkOAuth2ProxyURL(ctx context.Context, expected string) error {
-	v := ctx.Value(oauth2.HTTPClient)
-	if expected == "" {
-		if v != nil {
-			return fmt.Errorf("proxy not expected, but found")
-		}
-		return nil
-	}
-
-	hc, ok := v.(*http.Client)
-	if !ok {
-		return fmt.Errorf("unexpected HTTP client type: %T", v)
-	}
-
-	u, err := hc.Transport.(*http.Transport).Proxy(nil)
-	if err != nil {
-		return fmt.Errorf("failed to get proxy URL: %w", err)
-	}
-
-	if u.String() != expected {
-		return fmt.Errorf("unexpected proxy URL: want '%s', got '%s'", expected, u.String())
-	}
-
-	return nil
-}
-
-func getError(setError bool) error {
-	if setError {
-		return fmt.Errorf("mock error")
-	}
-	return nil
+func withProxyURL(u url.URL) bifröst.Option {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = http.ProxyURL(&u)
+	return bifröst.WithHTTPClient(http.Client{Transport: transport})
 }

@@ -20,43 +20,35 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package bifröst_test
+package gcp_test
 
 import (
-	"net/http"
 	"testing"
 	"time"
 
 	. "github.com/onsi/gomega"
+	"golang.org/x/oauth2"
 
-	bifröst "github.com/kubernetes-bifrost/bifrost"
+	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 )
 
-func TestOptions_Apply(t *testing.T) {
+func TestToken_GetDuration(t *testing.T) {
 	g := NewWithT(t)
 
-	hc := http.Client{Timeout: 5}
+	token := &gcp.Token{oauth2.Token{
+		Expiry: time.Now().Add(time.Hour),
+	}}
 
-	var o bifröst.Options
-	o.Apply(bifröst.WithContainerRegistry("registry.example.com"))
-	o.Apply(bifröst.WithHTTPClient(hc))
-
-	g.Expect(o.GetContainerRegistry()).To(Equal("registry.example.com"))
-
-	httpClient := o.GetHTTPClient()
-	g.Expect(httpClient).NotTo(BeNil())
-	g.Expect(httpClient.Timeout).To(Equal(time.Duration(5)))
+	duration := token.GetDuration()
+	g.Expect(duration).To(BeNumerically("~", time.Hour, time.Second))
 }
 
-func TestOptions_ApplyProviderOptions(t *testing.T) {
+func TestToken_Source(t *testing.T) {
 	g := NewWithT(t)
 
-	var o bifröst.Options
-	o.Apply(bifröst.WithProviderOptions(func(obj any) {
-		*obj.(*int) = 42
-	}))
+	oauth2Token := oauth2.Token{AccessToken: "test-token"}
 
-	var x int
-	o.ApplyProviderOptions(&x)
-	g.Expect(x).To(Equal(42))
+	token := &gcp.Token{oauth2Token}
+
+	g.Expect(token.Source().Token()).To(Equal(&oauth2Token))
 }

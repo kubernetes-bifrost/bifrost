@@ -20,43 +20,36 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package bifröst_test
+package gcp
 
 import (
-	"net/http"
-	"testing"
-	"time"
+	"context"
+	"fmt"
 
-	. "github.com/onsi/gomega"
+	"golang.org/x/oauth2"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
 )
 
-func TestOptions_Apply(t *testing.T) {
-	g := NewWithT(t)
-
-	hc := http.Client{Timeout: 5}
-
-	var o bifröst.Options
-	o.Apply(bifröst.WithContainerRegistry("registry.example.com"))
-	o.Apply(bifröst.WithHTTPClient(hc))
-
-	g.Expect(o.GetContainerRegistry()).To(Equal("registry.example.com"))
-
-	httpClient := o.GetHTTPClient()
-	g.Expect(httpClient).NotTo(BeNil())
-	g.Expect(httpClient.Timeout).To(Equal(time.Duration(5)))
+type tokenSource struct {
+	ctx  context.Context
+	opts []bifröst.Option
 }
 
-func TestOptions_ApplyProviderOptions(t *testing.T) {
-	g := NewWithT(t)
+// NewTokenSource creates a new token source for the given context and options.
+func NewTokenSource(ctx context.Context, opts ...bifröst.Option) oauth2.TokenSource {
+	return &tokenSource{ctx, opts}
+}
 
-	var o bifröst.Options
-	o.Apply(bifröst.WithProviderOptions(func(obj any) {
-		*obj.(*int) = 42
-	}))
-
-	var x int
-	o.ApplyProviderOptions(&x)
-	g.Expect(x).To(Equal(42))
+// Token implements oauth2.TokenSource.
+func (t *tokenSource) Token() (*oauth2.Token, error) {
+	token, err := bifröst.GetToken(t.ctx, Provider{}, t.opts...)
+	if err != nil {
+		return nil, err
+	}
+	gcpToken, ok := token.(*Token)
+	if !ok {
+		return nil, fmt.Errorf("failed to cast token to GCP token: %T", token)
+	}
+	return &gcpToken.Token, nil
 }

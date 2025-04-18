@@ -20,43 +20,34 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package bifröst_test
+package aws
 
 import (
-	"net/http"
-	"testing"
 	"time"
 
-	. "github.com/onsi/gomega"
-
-	bifröst "github.com/kubernetes-bifrost/bifrost"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/sts/types"
 )
 
-func TestOptions_Apply(t *testing.T) {
-	g := NewWithT(t)
+// Token is the AWS token.
+type Token struct{ types.Credentials }
 
-	hc := http.Client{Timeout: 5}
-
-	var o bifröst.Options
-	o.Apply(bifröst.WithContainerRegistry("registry.example.com"))
-	o.Apply(bifröst.WithHTTPClient(hc))
-
-	g.Expect(o.GetContainerRegistry()).To(Equal("registry.example.com"))
-
-	httpClient := o.GetHTTPClient()
-	g.Expect(httpClient).NotTo(BeNil())
-	g.Expect(httpClient.Timeout).To(Equal(time.Duration(5)))
+func newTokenFromAWSCredentials(creds *aws.Credentials) *Token {
+	return &Token{types.Credentials{
+		AccessKeyId:     &creds.AccessKeyID,
+		SecretAccessKey: &creds.SecretAccessKey,
+		SessionToken:    &creds.SessionToken,
+		Expiration:      &creds.Expires,
+	}}
 }
 
-func TestOptions_ApplyProviderOptions(t *testing.T) {
-	g := NewWithT(t)
+// GetDuration implements bifröst.Token.
+func (t *Token) GetDuration() time.Duration {
+	return time.Until(*t.Expiration)
+}
 
-	var o bifröst.Options
-	o.Apply(bifröst.WithProviderOptions(func(obj any) {
-		*obj.(*int) = 42
-	}))
-
-	var x int
-	o.ApplyProviderOptions(&x)
-	g.Expect(x).To(Equal(42))
+// CredentialsProvider gets a credentials provider for the token to use with AWS libraries.
+func (t *Token) Provider() aws.CredentialsProvider {
+	return credentials.NewStaticCredentialsProvider(*t.AccessKeyId, *t.SecretAccessKey, *t.SessionToken)
 }

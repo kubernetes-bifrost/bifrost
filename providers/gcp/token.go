@@ -20,43 +20,23 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package bifröst_test
+package gcp
 
 import (
-	"net/http"
-	"testing"
 	"time"
 
-	. "github.com/onsi/gomega"
-
-	bifröst "github.com/kubernetes-bifrost/bifrost"
+	"golang.org/x/oauth2"
 )
 
-func TestOptions_Apply(t *testing.T) {
-	g := NewWithT(t)
+// Token is the GCP token.
+type Token struct{ oauth2.Token }
 
-	hc := http.Client{Timeout: 5}
-
-	var o bifröst.Options
-	o.Apply(bifröst.WithContainerRegistry("registry.example.com"))
-	o.Apply(bifröst.WithHTTPClient(hc))
-
-	g.Expect(o.GetContainerRegistry()).To(Equal("registry.example.com"))
-
-	httpClient := o.GetHTTPClient()
-	g.Expect(httpClient).NotTo(BeNil())
-	g.Expect(httpClient.Timeout).To(Equal(time.Duration(5)))
+// GetDuration implements bifröst.Token.
+func (t *Token) GetDuration() time.Duration {
+	return time.Until(t.Expiry)
 }
 
-func TestOptions_ApplyProviderOptions(t *testing.T) {
-	g := NewWithT(t)
-
-	var o bifröst.Options
-	o.Apply(bifröst.WithProviderOptions(func(obj any) {
-		*obj.(*int) = 42
-	}))
-
-	var x int
-	o.ApplyProviderOptions(&x)
-	g.Expect(x).To(Equal(42))
+// Source gets a token source for the token to use with GCP libraries.
+func (t *Token) Source() oauth2.TokenSource {
+	return oauth2.StaticTokenSource(&t.Token)
 }

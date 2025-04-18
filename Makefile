@@ -34,11 +34,12 @@ tidy:
 .PHONY: test
 test: bin/setup-envtest
 	go test -v -coverprofile=coverage.out ./...
-	cd providers/gcp; go test -v -coverprofile=../../coverage-gcp.out ./...
-	for pkg in testing; do \
-		cat coverage.out | grep -v github.com/kubernetes-bifrost/bifrost/$$pkg/ >> coverage.tmp; \
-		mv coverage.tmp coverage.out; \
+	for provider_path in providers/*; do \
+		provider=$$(basename $$provider_path); \
+		cd providers/$$provider; go test -v -coverprofile=../../coverage-$$provider.out ./...; cd -; \
 	done
+	cat coverage.out | grep -v github.com/kubernetes-bifrost/bifrost/testing/ >> coverage.tmp
+	mv coverage.tmp coverage.out
 
 bin/setup-envtest: bin
 	GOBIN=${GOBIN} go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
@@ -57,4 +58,5 @@ run: bin/bifrost
 		--log-level=debug \
 		--tls-cert-file=cmd/testdata/tls.crt \
 		--tls-key-file=cmd/testdata/tls.key \
+		--aws-sts-region=us-east-1 \
 		--gke-metadata=kubernetes-bifrost/us-central1/autopilot-cluster-1
