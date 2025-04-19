@@ -44,7 +44,6 @@ import (
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
 	bifröstpb "github.com/kubernetes-bifrost/bifrost/grpc/go"
-	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 )
 
 const (
@@ -62,11 +61,10 @@ var allowedOutputFormats = strings.Join([]string{
 }, ", ")
 
 var getTokenCmdFlags struct {
-	outputFormat       string
-	serviceAccount     string
-	proxyURLString     string
-	containerRegistry  string
-	preferDirectAccess bool
+	outputFormat      string
+	serviceAccount    string
+	proxyURLString    string
+	containerRegistry string
 
 	outputFormatter   func(any) error
 	serviceAccountObj *corev1.ServiceAccount
@@ -91,8 +89,6 @@ func init() {
 			"When set to 'debug' a debug proxy will be started")
 	getTokenCmd.PersistentFlags().StringVarP(&getTokenCmdFlags.containerRegistry, "container-registry", "c", "",
 		"A container registry host. When specified a username and password for the registry will be retrieved")
-	getTokenCmd.PersistentFlags().BoolVarP(&getTokenCmdFlags.preferDirectAccess, "prefer-direct-access", "d", false,
-		"Give preference to impersonating kubernetes service accounts directly instead of an identity from the cloud provider")
 }
 
 var getTokenCmd = &cobra.Command{
@@ -227,33 +223,11 @@ Expires At: %[3]s (%[4]s)
 		if serviceAccountRef != nil {
 			opts = append(opts, bifröst.WithServiceAccount(*serviceAccountRef, kubeClient))
 		}
-		if cmd.Name() != gcp.ProviderName {
-			// Detect if running on GKE. If yes, use GCP as the identity provider
-			// for getting access to resources in other cloud providers.
-			if getTokenCmdFlags.printProgressInfo {
-				fmt.Println("Check if identity provider is required...")
-			}
-			if gcp.OnGKE(ctx) {
-				if getTokenCmdFlags.printProgressInfo {
-					fmt.Printf("Process is running on GKE and token was requested for %s, "+
-						"using GCP as the identity provider is necessary.\n",
-						cmd.Name())
-				}
-				opts = append(opts, bifröst.WithIdentityProvider(gcp.Provider{}))
-			} else {
-				if getTokenCmdFlags.printProgressInfo {
-					fmt.Println("No identity provider is required.")
-				}
-			}
-		}
 		if getTokenCmdFlags.httpClient != nil {
 			opts = append(opts, bifröst.WithHTTPClient(*getTokenCmdFlags.httpClient))
 		}
 		if getTokenCmdFlags.containerRegistry != "" {
 			opts = append(opts, bifröst.WithContainerRegistry(getTokenCmdFlags.containerRegistry))
-		}
-		if getTokenCmdFlags.preferDirectAccess {
-			opts = append(opts, bifröst.WithPreferDirectAccess())
 		}
 		getTokenCmdFlags.opts = opts
 

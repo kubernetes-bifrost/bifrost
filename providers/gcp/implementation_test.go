@@ -27,82 +27,21 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
-	"time"
 
 	. "github.com/onsi/gomega"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google/externalaccount"
-	"google.golang.org/api/impersonate"
-	"google.golang.org/api/option"
 
 	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 )
-
-func TestOnGKE(t *testing.T) {
-	t.Run("not on GKE, timeout", func(t *testing.T) {
-		g := NewWithT(t)
-		start := time.Now()
-		ok := gcp.OnGKE(context.Background())
-		latency := time.Since(start)
-		g.Expect(ok).To(BeFalse())
-		g.Expect(latency).To(BeNumerically("~", time.Second, 400*time.Millisecond))
-	})
-
-	t.Run("on GKE, but metadata service errors", func(t *testing.T) {
-		g := NewWithT(t)
-
-		(&gkeMetadataServer{
-			projectID:    "ongke-project-id",
-			location:     "ongke-location",
-			name:         "ongke-name",
-			projectIDErr: true,
-			locationErr:  true,
-			nameErr:      true,
-		}).start(t)
-
-		start := time.Now()
-		ok := gcp.OnGKE(context.Background())
-		latency := time.Since(start)
-		g.Expect(ok).To(BeFalse())
-		g.Expect(latency).To(BeNumerically("~", 0, 200*time.Millisecond))
-	})
-
-	t.Run("on GKE, success", func(t *testing.T) {
-		g := NewWithT(t)
-
-		(&gkeMetadataServer{
-			projectID: "ongke-project-id",
-			location:  "ongke-location",
-			name:      "ongke-name",
-		}).start(t)
-
-		start := time.Now()
-		ok := gcp.OnGKE(context.Background())
-		latency := time.Since(start)
-		g.Expect(ok).To(BeTrue())
-		g.Expect(latency).To(BeNumerically("~", 0, 200*time.Millisecond))
-	})
-
-	t.Run("on GKE, cached", func(t *testing.T) {
-		g := NewWithT(t)
-
-		start := time.Now()
-		ok := gcp.OnGKE(context.Background())
-		latency := time.Since(start)
-		g.Expect(ok).To(BeTrue())
-		g.Expect(latency).To(BeNumerically("~", 0, 10*time.Millisecond))
-	})
-}
 
 type mockImpl struct {
 	t                 *testing.T
 	token             *oauth2.Token
 	sourceErr         bool
-	transportErr      bool
 	gkeMetadata       gcp.GKEMetadata
 	expectedProxyURL  string
 	expectedExtConfig *externalaccount.Config
-	expectedImpConfig *impersonate.IDTokenConfig
 }
 
 func (m *mockImpl) GKEMetadata() *gcp.GKEMetadata {
@@ -136,19 +75,6 @@ func (m *mockImpl) NewAccessTokenSource(ctx context.Context, conf *externalaccou
 		g.Expect(conf).To(Equal(m.expectedExtConfig))
 	}
 	return &mockTokenSource{m.token}, getError(m.sourceErr)
-}
-
-func (m *mockImpl) NewIDTokenSource(ctx context.Context, config *impersonate.IDTokenConfig, opts ...option.ClientOption) (oauth2.TokenSource, error) {
-	if m.expectedImpConfig != nil {
-		m.t.Helper()
-		g := NewWithT(m.t)
-		g.Expect(config).To(Equal(m.expectedImpConfig))
-	}
-	return &mockTokenSource{m.token}, getError(m.sourceErr)
-}
-
-func (m *mockImpl) NewTransport(ctx context.Context, base http.RoundTripper, opts ...option.ClientOption) (http.RoundTripper, error) {
-	return base, getError(m.transportErr)
 }
 
 func checkOAuth2ProxyURL(ctx context.Context, expected string) error {

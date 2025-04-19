@@ -60,15 +60,3 @@ type Provider interface {
 	NewRegistryLogin(ctx context.Context, containerRegistry string,
 		accessToken Token, opts ...Option) (*ContainerRegistryLogin, error)
 }
-
-// IdentityProvider extends Provider with a method for creating identity tokens.
-type IdentityProvider interface {
-	Provider
-
-	// NewIdentityToken takes an access token, an identity to be impesonated and
-	// an audience and returns an identity token that attests to the identity
-	// and targets the audience.
-	NewIdentityToken(ctx context.Context, accessToken Token,
-		serviceAccount corev1.ServiceAccount,
-		audience string, opts ...Option) (string, error)
-}

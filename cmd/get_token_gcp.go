@@ -115,7 +115,6 @@ var getGCPTokenCmd = &cobra.Command{
 }
 
 func reflectGCPToken(ctx context.Context, token *gcp.Token) (string, error) {
-	email := "DirectAccess"
 	tokenInfoURL := (&url.URL{
 		Scheme: "https",
 		Host:   "www.googleapis.com",
@@ -133,9 +132,8 @@ func reflectGCPToken(ctx context.Context, token *gcp.Token) (string, error) {
 		return "", fmt.Errorf("failed to get gcp token info: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		email = "DirectAccess"
-	} else {
+	email := "DirectAccess"
+	if resp.StatusCode == http.StatusOK {
 		var info struct {
 			Email string `json:"email"`
 		}
@@ -221,11 +219,6 @@ func callGCPService(ctx context.Context, client bifröstpb.BifrostClient) (any, 
 
 func getGCPOptionsAndProvider(params *bifröstpb.GCPParams, opts []bifröst.Option,
 	providerLoggerData logrus.Fields) ([]bifröst.Option, bifröst.Provider) {
-
-	// The only identity provider we support is GCP. If the requested
-	// access token is for GCP, then using GCP as the identity provider
-	// is not necessary/does not make sense.
-	opts = append(opts, bifröst.WithIdentityProvider(nil))
 
 	if email := params.GetServiceAccountEmail(); email != "" {
 		opts = append(opts, bifröst.WithProviderOptions(gcp.WithServiceAccountEmail(email)))

@@ -26,7 +26,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"cloud.google.com/go/compute/metadata"
 )
@@ -102,9 +101,6 @@ func (g *GKEMetadata) load(ctx context.Context) error {
 	}
 
 	client := metadata.NewClient(nil)
-
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
 
 	projectID, err := client.GetWithContext(ctx, "project/project-id")
 	if err != nil {

@@ -33,10 +33,8 @@ type Options struct {
 	cache              Cache
 	client             Client
 	serviceAccountRef  *client.ObjectKey
-	identityProvider   IdentityProvider
 	httpClient         *http.Client
 	containerRegistry  string
-	preferDirectAccess bool
 	extraCacheKeyParts []string
 	providerOptions    []ProviderOption
 }
@@ -63,27 +61,6 @@ func WithServiceAccount(serviceAccountRef client.ObjectKey, client Client) Optio
 	return func(o *Options) {
 		o.serviceAccountRef = &serviceAccountRef
 		o.client = client
-	}
-}
-
-// WithIdentityProvider sets an identity provider for issuing an identity token.
-// Requires a service account to be set. This identity token is used to
-// issue the final cloud provider access token, replacing the service account
-// token. The service account token is then used to issue this identity token
-// instead.
-//
-// In other words, this option allows using an intermediary impersonation.
-// Instead of using the service account token to directly issue the final
-// cloud provider access token, we use it to issue an intermediary identity
-// token which is then used to issue the final cloud provider access token.
-//
-// This kind of intermediary impersonation is needed for clusters whose issuer
-// URL cannot be accessed publicly and cannot be changed, e.g. GKE clusters.
-//
-// Passing a nil provider disables the use of an identity provider.
-func WithIdentityProvider(provider IdentityProvider) Option {
-	return func(o *Options) {
-		o.identityProvider = provider
 	}
 }
 
@@ -114,21 +91,6 @@ func WithContainerRegistry(registry string) Option {
 	}
 }
 
-// WithPreferDirectAccess sets the prefer direct access flag for
-// getting the token. It suggests that the provider should issue
-// a token representing the service account directly if possible,
-// instead of an identity of the provider. This flag exists only
-// to support issuing cloud provider access tokens through an
-// intermediary identity provider. The only cloud providers
-// supporting this require that the intermediary access token
-// issued for getting the intermediary identity token is issued
-// with direct access.
-func WithPreferDirectAccess() Option {
-	return func(o *Options) {
-		o.preferDirectAccess = true
-	}
-}
-
 // WithProviderOptions sets the provider-specific options for getting a token.
 func WithProviderOptions(opts ...ProviderOption) Option {
 	return func(o *Options) {
@@ -151,11 +113,6 @@ func (o *Options) ApplyProviderOptions(opts any) {
 	}
 }
 
-// GetIdentityProvider returns the configured identity provider.
-func (o *Options) GetIdentityProvider() IdentityProvider {
-	return o.identityProvider
-}
-
 // GetHTTPClient returns the HTTP client for getting the token.
 func (o *Options) GetHTTPClient() *http.Client {
 	return o.httpClient
@@ -165,9 +122,4 @@ func (o *Options) GetHTTPClient() *http.Client {
 // getting the token.
 func (o *Options) GetContainerRegistry() string {
 	return o.containerRegistry
-}
-
-// PreferDirectAccess returns the prefer direct access flag.
-func (o *Options) PreferDirectAccess() bool {
-	return o.preferDirectAccess
 }

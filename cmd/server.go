@@ -256,16 +256,6 @@ server only from pods running on the same node.
 				return err
 			}
 			opts = append(opts, bifröst.WithProviderOptions(gcp.WithDefaultWorkloadIdentityProvider(wip)))
-		} else {
-			// Detect if running on GKE. If yes, use GCP as the identity provider
-			// for getting access to resources in other cloud providers.
-			logger.Info("checking if running on GKE")
-			if gcp.OnGKE(ctx) {
-				logger.Info("GKE cluster detected")
-				opts = append(opts, bifröst.WithIdentityProvider(gcp.Provider{}))
-			} else {
-				logger.Info("non-GKE cluster detected")
-			}
 		}
 
 		// Create transport credentials for internal gRPC server for gRPC gateway.

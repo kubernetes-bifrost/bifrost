@@ -24,30 +24,19 @@ package gcp
 
 import (
 	"context"
-	"net/http"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/google/externalaccount"
-	"google.golang.org/api/impersonate"
-	"google.golang.org/api/option"
-	htransport "google.golang.org/api/transport/http"
 )
 
 type implProvider interface {
 	GKEMetadata() *GKEMetadata
 	NewDefaultAccessTokenSource(ctx context.Context, scope ...string) (oauth2.TokenSource, error)
 	NewAccessTokenSource(ctx context.Context, conf *externalaccount.Config) (oauth2.TokenSource, error)
-	NewIDTokenSource(ctx context.Context, config *impersonate.IDTokenConfig, opts ...option.ClientOption) (oauth2.TokenSource, error)
-	NewTransport(ctx context.Context, base http.RoundTripper, opts ...option.ClientOption) (http.RoundTripper, error)
 }
 
 type impl struct{}
-
-// OnGKE returns true if the pod is running on a GKE node/pod.
-func OnGKE(ctx context.Context) bool {
-	return impl{}.GKEMetadata().load(ctx) == nil
-}
 
 var gkeMetadata GKEMetadata
 
@@ -61,12 +50,4 @@ func (impl) NewDefaultAccessTokenSource(ctx context.Context, scopes ...string) (
 
 func (impl) NewAccessTokenSource(ctx context.Context, conf *externalaccount.Config) (oauth2.TokenSource, error) {
 	return externalaccount.NewTokenSource(ctx, *conf)
-}
-
-func (impl) NewIDTokenSource(ctx context.Context, config *impersonate.IDTokenConfig, opts ...option.ClientOption) (oauth2.TokenSource, error) {
-	return impersonate.IDTokenSource(ctx, *config, opts...)
-}
-
-func (impl) NewTransport(ctx context.Context, base http.RoundTripper, opts ...option.ClientOption) (http.RoundTripper, error) {
-	return htransport.NewTransport(ctx, base, opts...)
 }

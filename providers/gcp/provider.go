@@ -25,12 +25,9 @@ package gcp
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google/externalaccount"
-	"google.golang.org/api/impersonate"
-	"google.golang.org/api/option"
 	corev1 "k8s.io/api/core/v1"
 
 	bifröst "github.com/kubernetes-bifrost/bifrost"
@@ -44,8 +41,6 @@ type Provider struct{}
 
 var _ bifröst.Provider = Provider{}
 
-var _ bifröst.IdentityProvider = Provider{}
-
 // GetName implements bifröst.Provider.
 func (Provider) GetName() string {
 	return ProviderName
@@ -57,7 +52,7 @@ func (Provider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...bif
 
 	var keyParts []string
 
-	if serviceAccount != nil && !o.PreferDirectAccess() {
+	if serviceAccount != nil {
 		email, err := po.getServiceAccountEmail(*serviceAccount)
 		if err != nil {
 			return "", err
@@ -178,13 +173,9 @@ func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 		},
 	}
 
-	var email string
-	if !o.PreferDirectAccess() {
-		var err error
-		email, err = po.getServiceAccountEmail(serviceAccount)
-		if err != nil {
-			return nil, err
-		}
+	email, err := po.getServiceAccountEmail(serviceAccount)
+	if err != nil {
+		return nil, err
 	}
 
 	if email != "" { // impersonation
@@ -222,56 +213,4 @@ func (Provider) NewRegistryLogin(ctx context.Context, containerRegistry string,
 		Password:  t.AccessToken,
 		ExpiresAt: t.Expiry,
 	}, nil
-}
-
-// NewIdentityToken implements bifröst.IdentityProvider.
-func (Provider) NewIdentityToken(ctx context.Context, accessToken bifröst.Token,
-	serviceAccount corev1.ServiceAccount, audience string,
-	opts ...bifröst.Option) (string, error) {
-
-	o, po, impl := getOptions(opts...)
-
-	if audience == "" {
-		return "", fmt.Errorf("audience is required for identity tokens")
-	}
-
-	email, err := po.getServiceAccountEmail(serviceAccount)
-	if err != nil {
-		return "", err
-	}
-	if email == "" {
-		return "", fmt.Errorf("GCP service account email is required for identity tokens")
-	}
-
-	conf := &impersonate.IDTokenConfig{
-		Audience:        audience,
-		TargetPrincipal: email,
-		IncludeEmail:    true,
-	}
-
-	gcpOpts := []option.ClientOption{
-		option.WithTokenSource(accessToken.(*Token).Source()),
-	}
-
-	if hc := o.GetHTTPClient(); hc != nil {
-		transport, err := impl.NewTransport(ctx, hc.Transport, gcpOpts...)
-		if err != nil {
-			return "", fmt.Errorf("failed to create HTTP transport: %w", err)
-		}
-		gcpOpts = []option.ClientOption{
-			option.WithHTTPClient(&http.Client{Transport: transport}),
-		}
-	}
-
-	idTokenSource, err := impl.NewIDTokenSource(ctx, conf, gcpOpts...)
-	if err != nil {
-		return "", err
-	}
-
-	idToken, err := idTokenSource.Token()
-	if err != nil {
-		return "", err
-	}
-
-	return idToken.AccessToken, nil
 }
