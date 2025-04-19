@@ -34,7 +34,6 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/golang-jwt/jwt/v5"
 	. "github.com/onsi/gomega"
-	authnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -348,16 +347,6 @@ func TestGetToken(t *testing.T) {
 	err = kubeClient.Create(ctx, proxySecret)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	// Create identity token for the provider-audience.
-	tokenReq := &authnv1.TokenRequest{
-		Spec: authnv1.TokenRequestSpec{
-			Audiences: []string{"provider-audience"},
-		},
-	}
-	err = kubeClient.SubResource("token").Create(ctx, defaultServiceAccount, tokenReq)
-	g.Expect(err).NotTo(HaveOccurred())
-	identityToken := tokenReq.Status.Token
-
 	for _, tt := range []struct {
 		name          string
 		provider      mockProvider
@@ -417,65 +406,6 @@ func TestGetToken(t *testing.T) {
 				}, managerClient),
 			},
 			expectedError: "failed to create access token: mock error",
-		},
-		{
-			name: "error on getting identity provider audience",
-			opts: []bifröst.Option{
-				bifröst.WithServiceAccount(client.ObjectKey{
-					Name:      "default",
-					Namespace: "default",
-				}, kubeClient),
-				bifröst.WithIdentityProvider(&mockProvider{
-					name:        "idp",
-					audienceErr: true,
-				}),
-			},
-			expectedError: "failed to get identity provider audience: mock error",
-		},
-		{
-			name: "error on creating service account token for identity provider",
-			opts: []bifröst.Option{
-				bifröst.WithServiceAccount(client.ObjectKey{
-					Name:      "default",
-					Namespace: "default",
-				}, defaultClient),
-				bifröst.WithIdentityProvider(&mockProvider{
-					name: "idp",
-				}),
-			},
-			expectedError: "failed to create kubernetes service account token: serviceaccounts",
-		},
-		{
-			name: "error on creating access token for identity provider",
-			opts: []bifröst.Option{
-				bifröst.WithServiceAccount(client.ObjectKey{
-					Name:      "default",
-					Namespace: "default",
-				}, kubeClient),
-				bifröst.WithIdentityProvider(&mockProvider{
-					name:     "idp",
-					tokenErr: true,
-				}),
-			},
-			expectedError: "failed to create identity provider access token: mock error",
-		},
-		{
-			name: "error on creating identity token",
-			opts: []bifröst.Option{
-				bifröst.WithServiceAccount(client.ObjectKey{
-					Name:      "default",
-					Namespace: "default",
-				}, kubeClient),
-				bifröst.WithIdentityProvider(&mockProvider{
-					name:             "idp",
-					audience:         "identity-provider-audience",
-					tokenAudience:    "identity-provider-audience",
-					tokenOIDCClient:  oidcClient,
-					token:            &mockToken{value: "identity-token-access-token"},
-					identityTokenErr: true,
-				}),
-			},
-			expectedError: "failed to create identity token: mock error",
 		},
 		{
 			name: "error on creating default access token with container registry",
@@ -559,22 +489,6 @@ func TestGetToken(t *testing.T) {
 			expectedError: "failed to build provider cache key: mock error",
 		},
 		{
-			name:     "error on building identity provider cache key",
-			provider: mockProvider{cacheKeyServiceAccount: true},
-			opts: []bifröst.Option{
-				bifröst.WithCache(&mockCache{}),
-				bifröst.WithServiceAccount(client.ObjectKey{
-					Name:      "default",
-					Namespace: "default",
-				}, kubeClient),
-				bifröst.WithIdentityProvider(&mockProvider{
-					name:        "idp",
-					cacheKeyErr: true,
-				}),
-			},
-			expectedError: "failed to build identity provider cache key: mock error",
-		},
-		{
 			name: "error on cache get or set",
 			provider: mockProvider{
 				defaultTokenErr: true,
@@ -608,43 +522,6 @@ func TestGetToken(t *testing.T) {
 				}, kubeClient),
 			},
 			expectedToken: &mockToken{value: "cached-token"},
-		},
-		{
-			name:     "cached identity token access token",
-			provider: mockProvider{cacheKeyServiceAccount: true},
-			opts: []bifröst.Option{
-				bifröst.WithCache(&mockCache{
-					key:   "41fe132178d5d0a829cf8019bc12b09ae9bf75ad87c7bfa85cdd0e81d3ba47e3",
-					token: &mockToken{value: "cached-identity-token-access-token"},
-				}),
-				bifröst.WithServiceAccount(client.ObjectKey{
-					Name:      "default",
-					Namespace: "default",
-				}, kubeClient),
-				bifröst.WithIdentityProvider(&mockProvider{
-					name: "idp",
-				}),
-			},
-			expectedToken: &mockToken{value: "cached-identity-token-access-token"},
-		},
-		{
-			name:     "cached container registry login from identity token access token",
-			provider: mockProvider{cacheKeyServiceAccount: true},
-			opts: []bifröst.Option{
-				bifröst.WithCache(&mockCache{
-					key:   "6f48cbdc440ddd79ef46cd062e4d9fc2577a67cda8b98b924a9581be781f9caf",
-					token: &mockToken{value: "cached-identity-token-registry-token"},
-				}),
-				bifröst.WithServiceAccount(client.ObjectKey{
-					Name:      "default",
-					Namespace: "default",
-				}, kubeClient),
-				bifröst.WithIdentityProvider(&mockProvider{
-					name: "idp",
-				}),
-				bifröst.WithContainerRegistry("test-registry"),
-			},
-			expectedToken: &mockToken{value: "cached-identity-token-registry-token"},
 		},
 		{
 			name: "cached container registry login from default",
@@ -697,35 +574,6 @@ func TestGetToken(t *testing.T) {
 			expectedToken: &mockToken{value: "access-token"},
 		},
 		{
-			name: "identity token access token",
-			provider: mockProvider{
-				audience:        "provider-audience",
-				tokenAudience:   "provider-audience",
-				tokenOIDCClient: oidcClient,
-				token:           &mockToken{value: "identity-token-access-token"},
-			},
-			opts: []bifröst.Option{
-				bifröst.WithServiceAccount(client.ObjectKey{
-					Name:      "default",
-					Namespace: "default",
-				}, kubeClient),
-				bifröst.WithIdentityProvider(&mockProvider{
-					name:                     "idp",
-					audience:                 "identity-provider-audience",
-					tokenAudience:            "identity-provider-audience",
-					tokenOIDCClient:          oidcClient,
-					tokenExpectDirectAccess:  true,
-					token:                    &mockToken{value: "identity-provider-access-token"},
-					identityTokenAccessToken: &mockToken{value: "identity-provider-access-token"},
-					identityTokenAudience:    "provider-audience",
-					identityToken:            identityToken,
-				}),
-				bifröst.WithProviderOptions(func(any) {}),
-				bifröst.WithHTTPClient(http.Client{}),
-			},
-			expectedToken: &mockToken{value: "identity-token-access-token"},
-		},
-		{
 			name: "container registry login from default",
 			provider: mockProvider{
 				defaultToken:             &mockToken{value: "default-access-token"},
@@ -757,37 +605,6 @@ func TestGetToken(t *testing.T) {
 				bifröst.WithContainerRegistry("test-registry"),
 			},
 			expectedToken: &bifröst.ContainerRegistryLogin{Username: "registry-token"},
-		},
-		{
-			name: "container registry login from identity token access token",
-			provider: mockProvider{
-				audience:                 "provider-audience",
-				tokenAudience:            "provider-audience",
-				tokenOIDCClient:          oidcClient,
-				token:                    &mockToken{value: "registry-identity-token-access-token"},
-				registryLoginAccessToken: &mockToken{value: "registry-identity-token-access-token"},
-				registryLogin:            &bifröst.ContainerRegistryLogin{Username: "registry-identity-token-access-token"},
-				registryHost:             "test-registry",
-			},
-			opts: []bifröst.Option{
-				bifröst.WithServiceAccount(client.ObjectKey{
-					Name:      "default",
-					Namespace: "default",
-				}, kubeClient),
-				bifröst.WithIdentityProvider(&mockProvider{
-					name:                     "idp",
-					audience:                 "identity-provider-audience",
-					tokenAudience:            "identity-provider-audience",
-					tokenOIDCClient:          oidcClient,
-					tokenExpectDirectAccess:  true,
-					token:                    &mockToken{value: "identity-provider-access-token"},
-					identityTokenAccessToken: &mockToken{value: "identity-provider-access-token"},
-					identityTokenAudience:    "provider-audience",
-					identityToken:            identityToken,
-				}),
-				bifröst.WithContainerRegistry("test-registry"),
-			},
-			expectedToken: &bifröst.ContainerRegistryLogin{Username: "registry-identity-token-access-token"},
 		},
 		{
 			name: "http client from options has priority over proxy service account annotation",
@@ -863,15 +680,10 @@ type mockProvider struct {
 	tokenAudience            string
 	tokenProxyURL            string
 	tokenOIDCClient          *http.Client
-	tokenExpectDirectAccess  bool
 	registryHost             string
 	registryLogin            *bifröst.ContainerRegistryLogin
 	registryLoginErr         bool
 	registryLoginAccessToken bifröst.Token
-	identityToken            string
-	identityTokenErr         bool
-	identityTokenAudience    string
-	identityTokenAccessToken bifröst.Token
 }
 
 func (m *mockToken) GetDuration() time.Duration {
@@ -994,11 +806,6 @@ func (m *mockProvider) NewAccessToken(ctx context.Context, identityToken string,
 		}
 	}
 
-	// Check prefer direct access.
-	if m.tokenExpectDirectAccess && !o.PreferDirectAccess() {
-		return nil, fmt.Errorf("expected direct access, got false")
-	}
-
 	return m.token, nil
 }
 
@@ -1025,30 +832,6 @@ func (m *mockProvider) NewRegistryLogin(ctx context.Context, containerRegistry s
 	}
 
 	return m.registryLogin, nil
-}
-
-func (m *mockProvider) NewIdentityToken(ctx context.Context, accessToken bifröst.Token,
-	serviceAccount corev1.ServiceAccount, audience string, opts ...bifröst.Option) (string, error) {
-
-	if m.identityTokenErr {
-		return "", errMock
-	}
-
-	// Check access token.
-	if m.identityTokenAccessToken == nil {
-		return "", fmt.Errorf("expected access token, got nil")
-	}
-	if accessToken.(*mockToken).value != m.identityTokenAccessToken.(*mockToken).value {
-		return "", fmt.Errorf("expected access token %q, got %q",
-			m.identityTokenAccessToken.(*mockToken).value, accessToken.(*mockToken).value)
-	}
-
-	// Check audience.
-	if audience != m.identityTokenAudience {
-		return "", fmt.Errorf("expected audience %q, got %q", m.identityTokenAudience, audience)
-	}
-
-	return m.identityToken, nil
 }
 
 var errMock = fmt.Errorf("mock error")

@@ -32,7 +32,6 @@ import (
 	. "github.com/onsi/gomega"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google/externalaccount"
-	"google.golang.org/api/impersonate"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -421,102 +420,6 @@ func TestProvider_NewRegistryLogin(t *testing.T) {
 	g.Expect(registryLogin.Username).To(Equal("oauth2accesstoken"))
 	g.Expect(registryLogin.Password).To(Equal("some-access-token"))
 	g.Expect(registryLogin.GetDuration()).To(BeNumerically("~", time.Hour, time.Second))
-}
-
-func TestProvider_NewIdentityToken(t *testing.T) {
-	for _, tt := range []struct {
-		name          string
-		accessToken   gcp.Token
-		audience      string
-		opts          []bifröst.Option
-		expectedToken string
-		expectedErr   string
-	}{
-		{
-			name:        "error due to audience not set",
-			expectedErr: "audience is required for identity tokens",
-		},
-		{
-			name:     "error due to invalid service account email",
-			audience: "some-audience",
-			opts: []bifröst.Option{
-				bifröst.WithProviderOptions(gcp.WithServiceAccountEmail("invalid-email")),
-			},
-			expectedErr: "invalid GCP service account email: 'invalid-email'",
-		},
-		{
-			name:        "error due to service account email not set",
-			audience:    "some-audience",
-			expectedErr: "GCP service account email is required for identity tokens",
-		},
-		{
-			name:     "error on new transport",
-			audience: "some-audience",
-			opts: []bifröst.Option{
-				withProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
-				bifröst.WithProviderOptions(
-					gcp.WithImplementation(&mockImpl{transportErr: true}),
-					gcp.WithServiceAccountEmail("nit@project-id.iam.gserviceaccount.com")),
-			},
-			expectedErr: "failed to create HTTP transport: mock error",
-		},
-		{
-			name:     "error on new id token source",
-			audience: "some-audience",
-			opts: []bifröst.Option{
-				bifröst.WithProviderOptions(
-					gcp.WithImplementation(&mockImpl{sourceErr: true}),
-					gcp.WithServiceAccountEmail("nit@project-id.iam.gserviceaccount.com")),
-			},
-			expectedErr: "mock error",
-		},
-		{
-			name:     "error on new id token from source",
-			audience: "some-audience",
-			opts: []bifröst.Option{
-				bifröst.WithProviderOptions(
-					gcp.WithImplementation(&mockImpl{}),
-					gcp.WithServiceAccountEmail("nit@project-id.iam.gserviceaccount.com")),
-			},
-			expectedErr: "mock error",
-		},
-		{
-			name:        "success",
-			accessToken: gcp.Token{oauth2.Token{AccessToken: "some-access-token"}},
-			audience:    "some-audience",
-			opts: []bifröst.Option{
-				withProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
-				bifröst.WithProviderOptions(
-					gcp.WithServiceAccountEmail("nit@project-id.iam.gserviceaccount.com"),
-					gcp.WithImplementation(&mockImpl{
-						t:                t,
-						token:            &oauth2.Token{AccessToken: "some-id-token"},
-						expectedProxyURL: "http://proxy-bifrost",
-						expectedImpConfig: &impersonate.IDTokenConfig{
-							Audience:        "some-audience",
-							TargetPrincipal: "nit@project-id.iam.gserviceaccount.com",
-							IncludeEmail:    true,
-						},
-					})),
-			},
-			expectedToken: "some-id-token",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			token, err := gcp.Provider{}.NewIdentityToken(context.Background(),
-				&tt.accessToken, corev1.ServiceAccount{}, tt.audience, tt.opts...)
-
-			if tt.expectedErr != "" {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tt.expectedErr))
-			} else {
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(token).To(Equal(tt.expectedToken))
-			}
-		})
-	}
 }
 
 func withProxyURL(u url.URL) bifröst.Option {
