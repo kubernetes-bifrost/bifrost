@@ -408,7 +408,7 @@ func (x *GetTokenResponse) GetRegistryLogin() *ContainerRegistryLogin {
 	return nil
 }
 
-func (x *GetTokenResponse) GetAws() *AWSToken {
+func (x *GetTokenResponse) GetAws() *AWSCredentials {
 	if x != nil {
 		if x, ok := x.Token.(*GetTokenResponse_Aws); ok {
 			return x.Aws
@@ -444,7 +444,7 @@ type GetTokenResponse_RegistryLogin struct {
 }
 
 type GetTokenResponse_Aws struct {
-	Aws *AWSToken `protobuf:"bytes,100,opt,name=aws,proto3,oneof"`
+	Aws *AWSCredentials `protobuf:"bytes,100,opt,name=aws,proto3,oneof"`
 }
 
 type GetTokenResponse_Azure struct {
@@ -515,7 +515,7 @@ func (x *AWSParams) GetRoleSessionName() string {
 	return ""
 }
 
-type AWSToken struct {
+type AWSCredentials struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	AccessKeyId     string                 `protobuf:"bytes,1,opt,name=access_key_id,json=accessKeyId,proto3" json:"access_key_id,omitempty"`
 	SecretAccessKey string                 `protobuf:"bytes,2,opt,name=secret_access_key,json=secretAccessKey,proto3" json:"secret_access_key,omitempty"`
@@ -525,20 +525,20 @@ type AWSToken struct {
 	sizeCache       protoimpl.SizeCache
 }
 
-func (x *AWSToken) Reset() {
-	*x = AWSToken{}
+func (x *AWSCredentials) Reset() {
+	*x = AWSCredentials{}
 	mi := &file_bifrost_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AWSToken) String() string {
+func (x *AWSCredentials) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AWSToken) ProtoMessage() {}
+func (*AWSCredentials) ProtoMessage() {}
 
-func (x *AWSToken) ProtoReflect() protoreflect.Message {
+func (x *AWSCredentials) ProtoReflect() protoreflect.Message {
 	mi := &file_bifrost_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -550,33 +550,33 @@ func (x *AWSToken) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AWSToken.ProtoReflect.Descriptor instead.
-func (*AWSToken) Descriptor() ([]byte, []int) {
+// Deprecated: Use AWSCredentials.ProtoReflect.Descriptor instead.
+func (*AWSCredentials) Descriptor() ([]byte, []int) {
 	return file_bifrost_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *AWSToken) GetAccessKeyId() string {
+func (x *AWSCredentials) GetAccessKeyId() string {
 	if x != nil {
 		return x.AccessKeyId
 	}
 	return ""
 }
 
-func (x *AWSToken) GetSecretAccessKey() string {
+func (x *AWSCredentials) GetSecretAccessKey() string {
 	if x != nil {
 		return x.SecretAccessKey
 	}
 	return ""
 }
 
-func (x *AWSToken) GetSessionToken() string {
+func (x *AWSCredentials) GetSessionToken() string {
 	if x != nil {
 		return x.SessionToken
 	}
 	return ""
 }
 
-func (x *AWSToken) GetExpiration() *timestamppb.Timestamp {
+func (x *AWSCredentials) GetExpiration() *timestamppb.Timestamp {
 	if x != nil {
 		return x.Expiration
 	}
@@ -843,17 +843,17 @@ const file_bifrost_proto_rawDesc = "" +
 	"\x03aws\x18d \x01(\v2\x15.bifrost.v1.AWSParamsH\x00R\x03aws\x12/\n" +
 	"\x05azure\x18e \x01(\v2\x17.bifrost.v1.AzureParamsH\x00R\x05azure\x12)\n" +
 	"\x03gcp\x18f \x01(\v2\x15.bifrost.v1.GCPParamsH\x00R\x03gcpB\x11\n" +
-	"\x0fprovider_params\"\xec\x01\n" +
+	"\x0fprovider_params\"\xf2\x01\n" +
 	"\x10GetTokenResponse\x12K\n" +
-	"\x0eregistry_login\x18\x01 \x01(\v2\".bifrost.v1.ContainerRegistryLoginH\x00R\rregistryLogin\x12(\n" +
-	"\x03aws\x18d \x01(\v2\x14.bifrost.v1.AWSTokenH\x00R\x03aws\x12.\n" +
+	"\x0eregistry_login\x18\x01 \x01(\v2\".bifrost.v1.ContainerRegistryLoginH\x00R\rregistryLogin\x12.\n" +
+	"\x03aws\x18d \x01(\v2\x1a.bifrost.v1.AWSCredentialsH\x00R\x03aws\x12.\n" +
 	"\x05azure\x18e \x01(\v2\x16.bifrost.v1.AzureTokenH\x00R\x05azure\x12(\n" +
 	"\x03gcp\x18f \x01(\v2\x14.bifrost.v1.GCPTokenH\x00R\x03gcpB\a\n" +
 	"\x05token\"R\n" +
 	"\tAWSParams\x12\x19\n" +
 	"\brole_arn\x18\x01 \x01(\tR\aroleArn\x12*\n" +
-	"\x11role_session_name\x18\x02 \x01(\tR\x0froleSessionName\"\xbb\x01\n" +
-	"\bAWSToken\x12\"\n" +
+	"\x11role_session_name\x18\x02 \x01(\tR\x0froleSessionName\"\xc1\x01\n" +
+	"\x0eAWSCredentials\x12\"\n" +
 	"\raccess_key_id\x18\x01 \x01(\tR\vaccessKeyId\x12*\n" +
 	"\x11secret_access_key\x18\x02 \x01(\tR\x0fsecretAccessKey\x12#\n" +
 	"\rsession_token\x18\x03 \x01(\tR\fsessionToken\x12:\n" +
@@ -913,7 +913,7 @@ var file_bifrost_proto_goTypes = []any{
 	(*GetTokenRequest)(nil),        // 4: bifrost.v1.GetTokenRequest
 	(*GetTokenResponse)(nil),       // 5: bifrost.v1.GetTokenResponse
 	(*AWSParams)(nil),              // 6: bifrost.v1.AWSParams
-	(*AWSToken)(nil),               // 7: bifrost.v1.AWSToken
+	(*AWSCredentials)(nil),         // 7: bifrost.v1.AWSCredentials
 	(*AzureParams)(nil),            // 8: bifrost.v1.AzureParams
 	(*AzureToken)(nil),             // 9: bifrost.v1.AzureToken
 	(*GCPParams)(nil),              // 10: bifrost.v1.GCPParams
@@ -927,10 +927,10 @@ var file_bifrost_proto_depIdxs = []int32{
 	8,  // 3: bifrost.v1.GetTokenRequest.azure:type_name -> bifrost.v1.AzureParams
 	10, // 4: bifrost.v1.GetTokenRequest.gcp:type_name -> bifrost.v1.GCPParams
 	1,  // 5: bifrost.v1.GetTokenResponse.registry_login:type_name -> bifrost.v1.ContainerRegistryLogin
-	7,  // 6: bifrost.v1.GetTokenResponse.aws:type_name -> bifrost.v1.AWSToken
+	7,  // 6: bifrost.v1.GetTokenResponse.aws:type_name -> bifrost.v1.AWSCredentials
 	9,  // 7: bifrost.v1.GetTokenResponse.azure:type_name -> bifrost.v1.AzureToken
 	11, // 8: bifrost.v1.GetTokenResponse.gcp:type_name -> bifrost.v1.GCPToken
-	12, // 9: bifrost.v1.AWSToken.expiration:type_name -> google.protobuf.Timestamp
+	12, // 9: bifrost.v1.AWSCredentials.expiration:type_name -> google.protobuf.Timestamp
 	12, // 10: bifrost.v1.AzureToken.expires_on:type_name -> google.protobuf.Timestamp
 	12, // 11: bifrost.v1.GCPToken.expiry:type_name -> google.protobuf.Timestamp
 	2,  // 12: bifrost.v1.Bifrost.GetVersion:input_type -> bifrost.v1.GetVersionRequest

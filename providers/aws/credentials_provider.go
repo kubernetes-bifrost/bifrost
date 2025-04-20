@@ -46,15 +46,15 @@ func (c *credentialsProvider) Retrieve(ctx context.Context) (aws.Credentials, er
 	if err != nil {
 		return aws.Credentials{}, err
 	}
-	awsToken, ok := token.(*Token)
+	awsCreds, ok := token.(*Credentials)
 	if !ok {
 		return aws.Credentials{}, fmt.Errorf("failed to cast token to AWS token: %T", token)
 	}
 	return aws.Credentials{
-		AccessKeyID:     *awsToken.AccessKeyId,
-		SecretAccessKey: *awsToken.SecretAccessKey,
-		SessionToken:    *awsToken.SessionToken,
-		Expires:         *awsToken.Expiration,
+		AccessKeyID:     *awsCreds.AccessKeyId,
+		SecretAccessKey: *awsCreds.SecretAccessKey,
+		SessionToken:    *awsCreds.SessionToken,
+		Expires:         *awsCreds.Expiration,
 		CanExpire:       true,
 	}, nil
 }

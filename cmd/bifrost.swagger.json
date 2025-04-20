@@ -163,18 +163,7 @@
         }
       }
     },
-    "v1AWSParams": {
-      "type": "object",
-      "properties": {
-        "roleArn": {
-          "type": "string"
-        },
-        "roleSessionName": {
-          "type": "string"
-        }
-      }
-    },
-    "v1AWSToken": {
+    "v1AWSCredentials": {
       "type": "object",
       "properties": {
         "accessKeyId": {
@@ -189,6 +178,17 @@
         "expiration": {
           "type": "string",
           "format": "date-time"
+        }
+      }
+    },
+    "v1AWSParams": {
+      "type": "object",
+      "properties": {
+        "roleArn": {
+          "type": "string"
+        },
+        "roleSessionName": {
+          "type": "string"
         }
       }
     },
@@ -276,7 +276,7 @@
           "$ref": "#/definitions/v1ContainerRegistryLogin"
         },
         "aws": {
-          "$ref": "#/definitions/v1AWSToken"
+          "$ref": "#/definitions/v1AWSCredentials"
         },
         "azure": {
           "$ref": "#/definitions/v1AzureToken"

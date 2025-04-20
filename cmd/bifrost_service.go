@@ -210,8 +210,8 @@ func (b *bifrostService) GetToken(ctx context.Context, req *bifröstpb.GetTokenR
 				ExpiresAt: timestamppb.New(t.ExpiresAt),
 			},
 		}
-	case *aws.Token:
-		resp.Token = getAWSResponseFromToken(t)
+	case *aws.Credentials:
+		resp.Token = getAWSResponseFromCreds(t)
 	case *gcp.Token:
 		resp.Token = getGCPResponseFromToken(t)
 	default:

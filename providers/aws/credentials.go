@@ -30,11 +30,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts/types"
 )
 
-// Token is the AWS token.
-type Token struct{ types.Credentials }
+// Credentials is the AWS credentials.
+type Credentials struct{ types.Credentials }
 
-func newTokenFromAWSCredentials(creds *aws.Credentials) *Token {
-	return &Token{types.Credentials{
+func newCredentials(creds *aws.Credentials) *Credentials {
+	return &Credentials{types.Credentials{
 		AccessKeyId:     &creds.AccessKeyID,
 		SecretAccessKey: &creds.SecretAccessKey,
 		SessionToken:    &creds.SessionToken,
@@ -43,11 +43,11 @@ func newTokenFromAWSCredentials(creds *aws.Credentials) *Token {
 }
 
 // GetDuration implements bifröst.Token.
-func (t *Token) GetDuration() time.Duration {
-	return time.Until(*t.Expiration)
+func (c *Credentials) GetDuration() time.Duration {
+	return time.Until(*c.Expiration)
 }
 
-// CredentialsProvider gets a credentials provider for the token to use with AWS libraries.
-func (t *Token) Provider() aws.CredentialsProvider {
-	return credentials.NewStaticCredentialsProvider(*t.AccessKeyId, *t.SecretAccessKey, *t.SessionToken)
+// Provider gets a credentials provider for the token to use with AWS libraries.
+func (c *Credentials) Provider() aws.CredentialsProvider {
+	return credentials.NewStaticCredentialsProvider(*c.AccessKeyId, *c.SecretAccessKey, *c.SessionToken)
 }

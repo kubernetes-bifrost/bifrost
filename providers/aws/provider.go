@@ -56,27 +56,24 @@ func (Provider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...bif
 
 	var keyParts []string
 
-	if serviceAccount != nil {
-		arn, err := po.getRoleARN(*serviceAccount)
-		if err != nil {
-			return "", err
-		}
-
-		if arn != "" {
-			sessionName, err := po.getRoleSessionName(*serviceAccount)
-			if err != nil {
-				return "", err
-			}
-			keyParts = append(keyParts, fmt.Sprintf("aws_roleARN=%s", arn))
-			keyParts = append(keyParts, fmt.Sprintf("aws_roleSessionName=%s", sessionName))
-		}
-	}
-
 	stsRegion, err := po.getSTSRegion(serviceAccount)
 	if err != nil {
 		return "", err
 	}
 	keyParts = append(keyParts, fmt.Sprintf("aws_stsRegion=%s", stsRegion))
+
+	if serviceAccount != nil {
+		arn, err := po.getRoleARN(*serviceAccount)
+		if err != nil {
+			return "", err
+		}
+		sessionName, err := po.getRoleSessionName(*serviceAccount, stsRegion)
+		if err != nil {
+			return "", err
+		}
+		keyParts = append(keyParts, fmt.Sprintf("aws_roleARN=%s", arn))
+		keyParts = append(keyParts, fmt.Sprintf("aws_roleSessionName=%s", sessionName))
+	}
 
 	if e := po.getSTSEndpoint(serviceAccount); e != "" {
 		keyParts = append(keyParts, fmt.Sprintf("aws_stsEndpoint=%s", e))
@@ -122,7 +119,7 @@ func (Provider) NewDefaultAccessToken(ctx context.Context, opts ...bifröst.Opti
 		return nil, err
 	}
 
-	return newTokenFromAWSCredentials(&creds), nil
+	return newCredentials(&creds), nil
 }
 
 // GetAudience implements bifröst.Provider.
@@ -136,23 +133,13 @@ func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 
 	o, po, impl := getOptions(opts...)
 
-	roleARN, err := po.getRoleARN(serviceAccount)
-	if err != nil {
-		return nil, err
-	}
-
-	roleSessionName, err := po.getRoleSessionName(serviceAccount)
-	if err != nil {
-		return nil, err
-	}
-
 	var awsOpts sts.Options
 
-	region, err := po.getSTSRegion(&serviceAccount)
+	stsRegion, err := po.getSTSRegion(&serviceAccount)
 	if err != nil {
 		return nil, err
 	}
-	awsOpts.Region = region
+	awsOpts.Region = stsRegion
 
 	if e := po.getSTSEndpoint(&serviceAccount); e != "" {
 		awsOpts.BaseEndpoint = &e
@@ -160,6 +147,16 @@ func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 
 	if hc := o.GetHTTPClient(); hc != nil {
 		awsOpts.HTTPClient = hc
+	}
+
+	roleARN, err := po.getRoleARN(serviceAccount)
+	if err != nil {
+		return nil, err
+	}
+
+	roleSessionName, err := po.getRoleSessionName(serviceAccount, stsRegion)
+	if err != nil {
+		return nil, err
 	}
 
 	input := sts.AssumeRoleWithWebIdentityInput{
@@ -175,12 +172,12 @@ func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 		return nil, fmt.Errorf("credentials are nil")
 	}
 
-	token := &Token{*resp.Credentials}
-	if token.Expiration == nil {
-		token.Expiration = &time.Time{}
+	creds := &Credentials{*resp.Credentials}
+	if creds.Expiration == nil {
+		creds.Expiration = &time.Time{}
 	}
 
-	return token, nil
+	return creds, nil
 }
 
 // NewRegistryLogin implements bifröst.Provider.
@@ -192,7 +189,7 @@ func (Provider) NewRegistryLogin(ctx context.Context, containerRegistry string,
 		return nil, err
 	}
 
-	credsProvider := accessToken.(*Token).Provider()
+	credsProvider := accessToken.(*Credentials).Provider()
 
 	conf := aws.Config{
 		Region:      region,
