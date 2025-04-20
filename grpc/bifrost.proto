@@ -89,7 +89,7 @@ message GetTokenResponse {
 	oneof token {
 		ContainerRegistryLogin registry_login = 1;
 
-		AWSToken aws = 100;
+		AWSCredentials aws = 100;
 		AzureToken azure = 101;
 		GCPToken gcp = 102;
 	}
@@ -100,7 +100,7 @@ message AWSParams {
 	string role_session_name = 2;
 }
 
-message AWSToken {
+message AWSCredentials {
 	string access_key_id = 1;
 	string secret_access_key = 2;
 	string session_token = 3;

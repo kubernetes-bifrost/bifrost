@@ -94,6 +94,10 @@ func WithImplementation(impl implProvider) bifröst.ProviderOption {
 	}
 }
 
+const registryPattern = `^.{1,100}\.([^/.]{1,100})\.amazonaws\.com.{1,100}$`
+
+var registryRegex = regexp.MustCompile(registryPattern)
+
 // ParseECRRegionFromHost parses the AWS region from the ECR registry host.
 func ParseECRRegionFromHost(registry string) (string, error) {
 	s := registryRegex.FindStringSubmatch(registry)
@@ -126,7 +130,7 @@ var roleSessionNamePattern = `^[A-Za-z0-9_=,.@-]{8,200}$`
 
 var roleSessionNameRegex = regexp.MustCompile(roleSessionNamePattern)
 
-func (o *options) getRoleSessionName(serviceAccount corev1.ServiceAccount) (string, error) {
+func (o *options) getRoleSessionName(serviceAccount corev1.ServiceAccount, stsRegion string) (string, error) {
 	var name string
 	if n := o.roleSessionName; n != "" {
 		name = n
@@ -135,7 +139,7 @@ func (o *options) getRoleSessionName(serviceAccount corev1.ServiceAccount) (stri
 		name = n
 	}
 	if name == "" {
-		name = fmt.Sprintf("%s.%s.role-session.%s", serviceAccount.Name, serviceAccount.Namespace, APIGroup)
+		name = fmt.Sprintf("%s.%s.%s.%s", serviceAccount.Name, serviceAccount.Namespace, stsRegion, APIGroup)
 	}
 	if !roleSessionNameRegex.MatchString(name) {
 		return "", fmt.Errorf("invalid AWS role session name: '%s'. must match %s",
@@ -156,7 +160,7 @@ func (o *options) getSTSRegion(serviceAccount *corev1.ServiceAccount) (string, e
 	if r := os.Getenv(EnvironmentVariableSTSRegion); r != "" {
 		return r, nil
 	}
-	return "", fmt.Errorf("no AWS region specified on the request options, service account annotation %s or %s env var",
+	return "", fmt.Errorf("no AWS region for the STS service was specified on the request options, service account annotation %s or %s env var",
 		ServiceAccountSTSRegion, EnvironmentVariableSTSRegion)
 }
 
@@ -183,10 +187,6 @@ func (o *options) stsRegionalEndpointsDisabled(serviceAccounts *corev1.ServiceAc
 	}
 	return false
 }
-
-const registryPattern = `^.{1,100}\.([^/.]{1,100})\.amazonaws\.com.{1,100}$`
-
-var registryRegex = regexp.MustCompile(registryPattern)
 
 func getOptions(opts ...bifröst.Option) (*bifröst.Options, *options, implProvider) {
 	var o bifröst.Options
