@@ -80,11 +80,11 @@ func (Provider) BuildCacheKey(serviceAccount *corev1.ServiceAccount, opts ...bif
 	}
 
 	if cr := o.GetContainerRegistry(); cr != "" {
-		region, err := ParseECRRegionFromHost(cr)
+		ecrRegion, err := ParseECRRegionFromHost(cr)
 		if err != nil {
 			return "", err
 		}
-		keyParts = append(keyParts, fmt.Sprintf("containerRegistryKey=%s", region))
+		keyParts = append(keyParts, fmt.Sprintf("containerRegistryKey=%s", ecrRegion))
 	}
 
 	return bifröst.BuildCacheKeyFromParts(keyParts...), nil
@@ -96,11 +96,11 @@ func (Provider) NewDefaultAccessToken(ctx context.Context, opts ...bifröst.Opti
 
 	var awsOpts []func(*config.LoadOptions) error
 
-	region, err := po.getSTSRegion(nil)
+	stsRegion, err := po.getSTSRegion(nil)
 	if err != nil {
 		return nil, err
 	}
-	awsOpts = append(awsOpts, config.WithRegion(region))
+	awsOpts = append(awsOpts, config.WithRegion(stsRegion))
 
 	if e := po.getSTSEndpoint(nil); e != "" {
 		awsOpts = append(awsOpts, config.WithBaseEndpoint(e))
@@ -184,7 +184,7 @@ func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 func (Provider) NewRegistryLogin(ctx context.Context, containerRegistry string,
 	accessToken bifröst.Token, opts ...bifröst.Option) (*bifröst.ContainerRegistryLogin, error) {
 
-	region, err := ParseECRRegionFromHost(containerRegistry)
+	ecrRegion, err := ParseECRRegionFromHost(containerRegistry)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +192,7 @@ func (Provider) NewRegistryLogin(ctx context.Context, containerRegistry string,
 	credsProvider := accessToken.(*Credentials).Provider()
 
 	conf := aws.Config{
-		Region:      region,
+		Region:      ecrRegion,
 		Credentials: credsProvider,
 	}
 

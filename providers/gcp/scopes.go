@@ -22,32 +22,7 @@
 
 package gcp
 
-import (
-	"context"
-
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
-	"golang.org/x/oauth2/google/externalaccount"
-)
-
-type implProvider interface {
-	GKEMetadata() *GKEMetadata
-	NewDefaultAccessTokenSource(ctx context.Context, scope ...string) (oauth2.TokenSource, error)
-	NewAccessTokenSource(ctx context.Context, conf *externalaccount.Config) (oauth2.TokenSource, error)
-}
-
-type impl struct{}
-
-var gkeMetadata GKEMetadata
-
-func (impl) GKEMetadata() *GKEMetadata {
-	return &gkeMetadata
-}
-
-func (impl) NewDefaultAccessTokenSource(ctx context.Context, scope ...string) (oauth2.TokenSource, error) {
-	return google.DefaultTokenSource(ctx, scope...)
-}
-
-func (impl) NewAccessTokenSource(ctx context.Context, conf *externalaccount.Config) (oauth2.TokenSource, error) {
-	return externalaccount.NewTokenSource(ctx, *conf)
+var scopes = []string{
+	"https://www.googleapis.com/auth/cloud-platform",
+	"https://www.googleapis.com/auth/userinfo.email",
 }

@@ -35,8 +35,7 @@ jobs:
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
     - run: make test
-    # TODO: use upstream action after they fix https://github.com/codecov/codecov-action/issues/1791
-    - uses: acouvreur/codecov-action@875d7048abe929fc0b5970c8d56f7064d6c38d46 # main
+    - uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5.4.3
       with:
         use_oidc: true
         fail_ci_if_error: true

@@ -48,13 +48,16 @@ func (m *mockImpl) GKEMetadata() *gcp.GKEMetadata {
 	return &m.gkeMetadata
 }
 
-func (m *mockImpl) NewDefaultAccessTokenSource(ctx context.Context, scopes ...string) (oauth2.TokenSource, error) {
+func (m *mockImpl) NewDefaultAccessTokenSource(ctx context.Context, scope ...string) (oauth2.TokenSource, error) {
 	if err := checkOAuth2ProxyURL(ctx, m.expectedProxyURL); err != nil {
 		return nil, err
 	}
-	if len(scopes) > 0 {
-		return nil, fmt.Errorf("unexpected scopes")
-	}
+	m.t.Helper()
+	g := NewWithT(m.t)
+	g.Expect(scope).To(Equal([]string{
+		"https://www.googleapis.com/auth/cloud-platform",
+		"https://www.googleapis.com/auth/userinfo.email",
+	}))
 	return &mockTokenSource{m.token}, getError(m.sourceErr)
 }
 

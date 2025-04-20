@@ -148,14 +148,20 @@ func TestProvider_NewDefaultAccessToken(t *testing.T) {
 		{
 			name: "error on getting token source",
 			opts: []bifröst.Option{
-				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{sourceErr: true})),
+				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{
+					t:         t,
+					sourceErr: true,
+				})),
 			},
 			expectedErr: "mock error",
 		},
 		{
 			name: "error on getting token",
 			opts: []bifröst.Option{
-				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{token: nil})),
+				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{
+					t:     t,
+					token: nil,
+				})),
 			},
 			expectedErr: "mock error",
 		},
@@ -164,6 +170,7 @@ func TestProvider_NewDefaultAccessToken(t *testing.T) {
 			opts: []bifröst.Option{
 				withProxyURL(url.URL{Scheme: "http", Host: "proxy-bifrost"}),
 				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{
+					t:                t,
 					token:            &oauth2.Token{AccessToken: "some-access-token"},
 					expectedProxyURL: "http://proxy-bifrost",
 				})),
