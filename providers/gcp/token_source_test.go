@@ -43,14 +43,20 @@ func TestTokenSource_Token(t *testing.T) {
 		{
 			name: "error on get token",
 			opts: []bifröst.Option{
-				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{sourceErr: true})),
+				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{
+					t:         t,
+					sourceErr: true,
+				})),
 			},
 			expectedErr: "failed to create default access token",
 		},
 		{
 			name: "error due to container registry login",
 			opts: []bifröst.Option{
-				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{token: &oauth2.Token{AccessToken: "token"}})),
+				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{
+					t:     t,
+					token: &oauth2.Token{AccessToken: "token"}},
+				)),
 				bifröst.WithContainerRegistry("gcr.io"),
 			},
 			expectedErr: "failed to cast token to GCP token: *bifröst.ContainerRegistryLogin",
@@ -58,7 +64,10 @@ func TestTokenSource_Token(t *testing.T) {
 		{
 			name: "success",
 			opts: []bifröst.Option{
-				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{token: &oauth2.Token{AccessToken: "token"}})),
+				bifröst.WithProviderOptions(gcp.WithImplementation(&mockImpl{
+					t:     t,
+					token: &oauth2.Token{AccessToken: "token"}},
+				)),
 			},
 			expectedToken: &oauth2.Token{AccessToken: "token"},
 		},

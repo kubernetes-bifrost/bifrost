@@ -78,7 +78,7 @@ func (Provider) NewDefaultAccessToken(ctx context.Context, opts ...bifröst.Opti
 		ctx = context.WithValue(ctx, oauth2.HTTPClient, hc)
 	}
 
-	src, err := impl.NewDefaultAccessTokenSource(ctx)
+	src, err := impl.NewDefaultAccessTokenSource(ctx, scopes...)
 	if err != nil {
 		return nil, err
 	}
@@ -167,10 +167,7 @@ func (Provider) NewAccessToken(ctx context.Context, identityToken string,
 		SubjectTokenType:     "urn:ietf:params:oauth:token-type:jwt",
 		TokenURL:             "https://sts.googleapis.com/v1/token",
 		SubjectTokenSupplier: TokenSupplier(identityToken),
-		Scopes: []string{
-			"https://www.googleapis.com/auth/cloud-platform",
-			"https://www.googleapis.com/auth/userinfo.email",
-		},
+		Scopes:               scopes,
 	}
 
 	email, err := po.getServiceAccountEmail(serviceAccount)

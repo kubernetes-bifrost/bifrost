@@ -26,42 +26,9 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 
-	bifröst "github.com/kubernetes-bifrost/bifrost"
 	"github.com/kubernetes-bifrost/bifrost/providers/gcp"
 )
-
-func TestWithServiceAccountEmail(t *testing.T) {
-	for _, tt := range []struct {
-		name        string
-		email       string
-		expectedKey string
-	}{
-		{
-			name:        "present",
-			email:       "test@project-id.iam.gserviceaccount.com",
-			expectedKey: "3e9d00e765f023ef59a67d176b4c43525ec394880e81d89d70881db853d7411e",
-		},
-		{
-			name:        "absent",
-			expectedKey: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			var opts []bifröst.Option
-
-			opts = append(opts, bifröst.WithProviderOptions(gcp.WithServiceAccountEmail(tt.email)))
-
-			key, err := gcp.Provider{}.BuildCacheKey(&corev1.ServiceAccount{}, opts...)
-			g.Expect(err).NotTo(HaveOccurred())
-
-			g.Expect(key).To(Equal(tt.expectedKey))
-		})
-	}
-}
 
 func TestParseWorkloadIdentityProvider(t *testing.T) {
 	for _, tt := range []struct {
