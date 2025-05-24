@@ -25,7 +25,6 @@ package gcp
 import (
 	"fmt"
 	"regexp"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -79,7 +78,7 @@ func WithImplementation(impl implProvider) bifröst.ProviderOption {
 	}
 }
 
-const workloadIdentityProviderPattern = `^((https:)?//iam.googleapis.com/)?projects/\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$`
+const workloadIdentityProviderPattern = `^projects/\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$`
 
 var workloadIdentityProviderRegex = regexp.MustCompile(workloadIdentityProviderPattern)
 
@@ -90,16 +89,7 @@ func ParseWorkloadIdentityProvider(wip string) (string, error) {
 		return "", fmt.Errorf("invalid GCP workload identity provider: '%s'. must match %s",
 			wip, workloadIdentityProviderPattern)
 	}
-
-	if strings.HasPrefix(wip, "https://") {
-		return wip, nil
-	}
-
-	if strings.HasPrefix(wip, "//iam.googleapis.com/") {
-		return fmt.Sprintf("https:%s", wip), nil
-	}
-
-	return fmt.Sprintf("https://iam.googleapis.com/%s", wip), nil
+	return fmt.Sprintf("//iam.googleapis.com/%s", wip), nil
 }
 
 const serviceAccountEmailPattern = `^[a-zA-Z0-9-]{1,100}@[a-zA-Z0-9-]{1,100}\.iam\.gserviceaccount\.com$`
