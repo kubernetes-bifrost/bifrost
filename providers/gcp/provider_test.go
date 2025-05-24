@@ -216,7 +216,7 @@ func TestProvider_GetAudience(t *testing.T) {
 					},
 				},
 			},
-			expectedAudience: "https://iam.googleapis.com/projects/1234/locations/global/workloadIdentityPools/pool/providers/options",
+			expectedAudience: "//iam.googleapis.com/projects/1234/locations/global/workloadIdentityPools/pool/providers/options",
 		},
 		{
 			name: "invalid audience from options",
@@ -231,7 +231,7 @@ func TestProvider_GetAudience(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: "invalid GCP workload identity provider: 'projects1234/locations/global/workloadIdentityPools/pool/providers/options'. must match ^((https:)?//iam.googleapis.com/)?projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
+			expectedErr: "invalid GCP workload identity provider: 'projects1234/locations/global/workloadIdentityPools/pool/providers/options'. must match ^projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
 		},
 		{
 			name: "audience from service account annotation has precedence over default audience",
@@ -245,7 +245,7 @@ func TestProvider_GetAudience(t *testing.T) {
 					},
 				},
 			},
-			expectedAudience: "https://iam.googleapis.com/projects/1234/locations/global/workloadIdentityPools/pool/providers/sa",
+			expectedAudience: "//iam.googleapis.com/projects/1234/locations/global/workloadIdentityPools/pool/providers/sa",
 		},
 		{
 			name: "invalid audience from service account annotation",
@@ -259,21 +259,21 @@ func TestProvider_GetAudience(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: "invalid GCP workload identity provider: 'projects/1234locations/global/workloadIdentityPools/pool/providers/sa'. must match ^((https:)?//iam.googleapis.com/)?projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
+			expectedErr: "invalid GCP workload identity provider: 'projects/1234locations/global/workloadIdentityPools/pool/providers/sa'. must match ^projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
 		},
 		{
 			name: "default audience has precedence over gke audience",
 			opts: []bifröst.Option{
 				bifröst.WithProviderOptions(gcp.WithDefaultWorkloadIdentityProvider("projects/1234/locations/global/workloadIdentityPools/pool/providers/default")),
 			},
-			expectedAudience: "https://iam.googleapis.com/projects/1234/locations/global/workloadIdentityPools/pool/providers/default",
+			expectedAudience: "//iam.googleapis.com/projects/1234/locations/global/workloadIdentityPools/pool/providers/default",
 		},
 		{
 			name: "invalid default audience",
 			opts: []bifröst.Option{
 				bifröst.WithProviderOptions(gcp.WithDefaultWorkloadIdentityProvider("projects/1234/locationsglobal/workloadIdentityPools/pool/providers/default")),
 			},
-			expectedErr: "invalid GCP workload identity provider: 'projects/1234/locationsglobal/workloadIdentityPools/pool/providers/default'. must match ^((https:)?//iam.googleapis.com/)?projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
+			expectedErr: "invalid GCP workload identity provider: 'projects/1234/locationsglobal/workloadIdentityPools/pool/providers/default'. must match ^projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
 		},
 		{
 			name:             "gke audience",
@@ -328,7 +328,7 @@ func TestProvider_NewAccessToken(t *testing.T) {
 					gcp.WithWorkloadIdentityProvider("invalid-provider")),
 			},
 			gkeMetadataErr: true,
-			expectedErr:    "invalid GCP workload identity provider: 'invalid-provider'. must match ^((https:)?//iam.googleapis.com/)?projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
+			expectedErr:    "invalid GCP workload identity provider: 'invalid-provider'. must match ^projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
 		},
 		{
 			name: "error on getting audience from gke metadata",

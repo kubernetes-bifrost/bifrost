@@ -40,22 +40,17 @@ func TestParseWorkloadIdentityProvider(t *testing.T) {
 		{
 			name:                     "has https: prefix",
 			workloadIdentityProvider: "https://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
-			expectedAudience:         "https://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
+			expectedErr:              "invalid GCP workload identity provider: 'https://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster'. must match ^projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
 		},
 		{
-			name:                     "has only //iam.googleapis.com/ prefix",
+			name:                     "has the //iam.googleapis.com/ prefix",
 			workloadIdentityProvider: "//iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
-			expectedAudience:         "https://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
+			expectedErr:              "invalid GCP workload identity provider: '//iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster'. must match ^projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
 		},
 		{
 			name:                     "has only the provider full name",
 			workloadIdentityProvider: "projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
-			expectedAudience:         "https://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
-		},
-		{
-			name:                     "has http instead of https",
-			workloadIdentityProvider: "http://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
-			expectedErr:              "invalid GCP workload identity provider: 'http://iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster'. must match ^((https:)?//iam.googleapis.com/)?projects/\\d{1,30}/locations/global/workloadIdentityPools/[^/]{1,100}/providers/[^/]{1,100}$",
+			expectedAudience:         "//iam.googleapis.com/projects/12345678/locations/global/workloadIdentityPools/my-cluster/providers/my-cluster",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
