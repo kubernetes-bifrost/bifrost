@@ -15,7 +15,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.19
 	github.com/aws/smithy-go v1.22.3
 	github.com/elazarl/goproxy v1.7.2
-	github.com/go-logr/logr v1.4.2
+	github.com/go-logr/logr v1.4.3
 	github.com/go-openapi/runtime v0.28.0
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3
@@ -28,7 +28,7 @@ require (
 	github.com/spf13/cobra v1.9.1
 	golang.org/x/net v0.40.0
 	golang.org/x/oauth2 v0.30.0
-	google.golang.org/api v0.234.0
+	google.golang.org/api v0.235.0
 	google.golang.org/grpc v1.72.2
 	google.golang.org/protobuf v1.36.6
 	gopkg.in/yaml.v3 v3.0.1
